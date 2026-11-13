@@ -1,5 +1,5 @@
 import styles from './panel.css';
-import { emptyProfile, normalizeName, priorityName, uniqueNames } from './core';
+import { emptyProfile, minWalkIntervalMs, normalizeName, priorityName, uniqueNames, validWalkSetting } from './core';
 import type { PickKind, Settings, ViewState } from './types';
 import { currentStageName, stageChoices } from './run-adapter';
 import type { LoopState } from './run-loop';
@@ -10,6 +10,8 @@ interface Actions {
   enable(enabled: boolean): void;
   clearLogs(): void;
   loop(enabled: boolean): void;
+  walk(enabled: boolean): void;
+  pauseAll(): void;
 }
 export class Panel {
   private shadow: ShadowRoot;
@@ -18,10 +20,10 @@ export class Panel {
   private currentKey = '';
   private logKey = '';
   private dragged = -1;
-  private expanded = false;
   private editingKind: PickKind = 'levelup';
   private lastRoundKind = '';
   private loopState: LoopState | null = null;
+  private walking = false;
   private stagesKey = '';
   constructor(settings: Settings, private actions: Actions) {
     this.settings = settings;
@@ -33,26 +35,53 @@ export class Panel {
       <style>${styles}\n.panel,.launcher { pointer-events:auto; }</style>
       <button class="launcher" id="launcher" aria-label="開啟 RO 選牌助手">♧ 選牌助手</button>
       <section class="panel" id="panel" aria-label="RO 選牌助手" hidden>
-        <header><span class="logo" aria-hidden="true">♧</span><div><strong>RO 選牌助手</strong><small>你的清單，你的打法 · v0.6.0</small></div><button class="icon" id="collapse" aria-label="收合面板">−</button></header>
+        <header><span class="logo" aria-hidden="true">♧</span><div><strong>RO 選牌助手</strong><small>你的清單，你的打法 · v0.7.2</small></div><button class="icon" id="collapse" aria-label="收合面板">−</button></header>
         <div class="body">
-          <div class="toolbar"><span class="mode" id="mode">PREVIEW / 預覽</span><button id="toggle" class="primary">啟用自動選牌</button></div>
+          <section id="automation" aria-labelledby="automation-title">
+            <div class="toolbar"><strong id="automation-title">自動功能</strong><button id="pause-all" disabled>全部暫停</button></div>
+            <div class="checks run-checks">
+              <label><input type="checkbox" id="toggle">自動選牌</label>
+              <label><input type="checkbox" id="loop-toggle">循環刷關</label>
+              <label><input type="checkbox" id="walk-toggle">小範圍走動</label>
+            </div>
+            <fieldset class="pick-rules"><legend>自動選牌啟用時</legend>
+              <div class="checks">
+                <label><input type="checkbox" id="auto-collect-loot">自動取得掉落物</label>
+                <label><input type="checkbox" id="auto-roll-loot">組隊自動擲骰</label>
+                <label><input type="checkbox" id="auto-reroll">技能未命中時重抽</label>
+                <label><input type="checkbox" id="chest-auto-reroll">寶箱未命中時重抽</label>
+                <label title="技能清單未命中且無法重抽時，選擇已辨識的最高稀有度"><input type="checkbox" id="fallback">技能未命中選最高稀有度</label>
+                <label title="寶箱清單未命中且無法重抽時，選擇已辨識的最高稀有度"><input type="checkbox" id="chest-fallback">寶箱未命中選最高稀有度</label>
+                <label title="清單內橘色技能優先，其次為尚未取得的技能"><input type="checkbox" id="prefer-new-skills">先拿齊清單技能</label>
+                <label><input type="checkbox" id="chest-replace">寶箱自動確認替換</label>
+              </div>
+            </fieldset>
+          </section>
+          <span class="mode" id="mode">PREVIEW / 預覽</span>
           <p class="status" id="status" role="status" aria-live="polite"></p>
+          <p class="status" id="walk-status" role="status" hidden></p>
+          <p class="status" id="loop-status" role="status" hidden></p>
           <div class="timer" id="timer"></div>
-          <div class="note">重新整理後回到預覽模式。</div>
           <details class="section" id="roll-settings"><summary>組隊分寶</summary>
-            <label class="checkbox-row"><input id="auto-roll-loot" type="checkbox">依種類自動擲骰</label>
-            <p class="note">啟用自動選牌後生效。無法辨識種類的掉落物會套用「其他」。</p>
+            <p class="note">無法辨識種類的掉落物會套用「其他」。</p>
             <div class="roll-rules">${rollCategoryKeys.map(key => `
               <div><label for="roll-${key}">${rollCategories[key]}</label><select id="roll-${key}">
                 <option value="need">Need（需求）</option><option value="greed">Greed（貪婪）</option>
               </select></div>`).join('')}</div>
           </details>
+          <details class="section" id="walk-settings"><summary>小範圍走動</summary>
+            <div class="row delay-range">
+              <label>活動半徑（格）<input id="walk-radius" type="number" min="1" step="1" required></label>
+              <label>步伐間隔（秒）<input id="walk-interval" type="number" min="${minWalkIntervalMs / 1000}" step="0.001" required></label>
+            </div>
+            <div id="walk-input-error" class="message" role="status"></div>
+            <p class="note">手動移動時暫停。放開操作 10 秒後，以角色當下的位置為中心繼續走動。</p>
+          </details>
           <details class="section" id="loop-settings"><summary>循環刷關 · 遠征隊長</summary>
             <label class="label" for="loop-stage">循環關卡</label>
             <input id="loop-stage" list="loop-stages" maxlength="120" placeholder="輸入遊戲中的完整關卡名稱" autocomplete="off">
             <datalist id="loop-stages"></datalist>
-            <div class="row loop-actions"><button id="loop-capture">使用目前關卡</button><button id="loop-toggle" class="primary">啟用循環刷關</button></div>
-            <p class="status" id="loop-status" role="status" aria-live="polite">循環尚未啟用</p>
+            <div class="row loop-actions"><button id="loop-capture">使用目前關卡</button></div>
             <p class="note" id="loop-count">本分頁已結算 0 場</p>
             <p class="note">可在關卡選單或戰鬥中讀取名稱；開啟隊長選單後也可從輸入框選關。沿用遊戲目前難度，勝利或死亡結算後等 2.5 秒回城，再次出發。啟用循環會一併啟用自動選牌。</p>
             <p class="note">回城出生點可直接與隊長交談；若已走遠，請先靠近隊長。支援單人一般關卡；劇情、組隊與其他對話會暫停。分頁需留在前景。</p>
@@ -74,26 +103,13 @@ export class Panel {
           </div>
           <div class="section"><span class="label">目前選牌</span><div id="current" class="current"><div class="empty">升級或寶箱選牌出現後，會在這裡顯示。</div></div></div>
           <details class="section" id="advanced"><summary>選牌設定</summary>
-            <label class="checkbox-row"><input id="prefer-new-skills" type="checkbox">先拿齊清單技能（橘色優先）</label>
-            <p class="note">清單內橘色（傳說）牌優先；沒有橘色時先取得新技能，再照順位升級。同類候選仍依順位。不為了補齊技能選入清單外的牌；已取得的放逐對象仍排除。</p>
-            <label class="checkbox-row"><input id="auto-reroll" type="checkbox">技能沒有目標牌時全部重抽</label>
-            <label class="checkbox-row"><input id="chest-auto-reroll" type="checkbox">寶箱沒有目標牌時全部重抽</label>
-            <p class="note">有設定目標清單才會重抽。重抽次數用完後，依下方未命中規則處理。</p>
-            <label class="note" for="fallback">技能清單沒有命中時</label>
-            <select id="fallback"><option value="pause">交由我手動選擇</option><option value="rarity">選最高稀有度（必須全部辨識成功）</option></select>
-            <label class="note" for="chest-fallback">寶箱清單沒有命中時</label>
-            <select id="chest-fallback"><option value="pause">交由我手動選擇</option><option value="rarity">選最高稀有度（必須全部辨識成功）</option></select>
-            <label class="checkbox-row"><input id="chest-replace" type="checkbox">寶箱自動確認替換</label>
-            <p class="note">清單內候選牌先比品質，同品質再比順位；勾選後會確認替換該欄位原有道具。關閉後，需替換的牌交由你處理。</p>
-            <label class="checkbox-row"><input id="auto-collect-loot" type="checkbox">撿到任何物品時自動點「取得」</label>
-            <p class="note">啟用自動選牌後，會等動畫結束再點「取得」。</p>
             <div class="note" style="margin-top:12px">每輪隨機選牌延遲（毫秒）</div>
             <div class="row delay-range"><label for="delay-min">最短<input id="delay-min" type="number" min="500" max="5000" step="100"></label><span>～</span><label for="delay-max">最長<input id="delay-max" type="number" min="500" max="5000" step="100"></label></div>
             <p class="note">預設 500～1500 毫秒，每輪重新抽取一次。若遊戲動畫尚未結束，會等到可操作時才點選。</p>
             <p class="note">關閉「先拿齊」時，技能先比順位，再比稀有度；寶箱清單內先比品質（稀有度），再比順位。皆相同時由左至右。寶箱名稱會忽略結尾的 +1、+2 等強化數字；切換語言後請確認清單。</p>
           </details>
           <details class="section"><summary>本分頁紀錄（最近 30 筆）</summary><div id="logs" class="log"></div><button id="clear-logs">清除紀錄</button></details>
-          <footer>設定儲存在此瀏覽器。自動選牌開關只作用於目前分頁。</footer>
+          <footer>選牌規則會儲存在此瀏覽器。重新整理後，請再勾選要啟動的功能。</footer>
         </div>
       </section>`;
     document.documentElement.append(host);
@@ -101,15 +117,37 @@ export class Panel {
     for (const name of ['pointerdown', 'pointerup', 'click', 'wheel']) this.shadow.addEventListener(name, event => event.stopPropagation());
     this.on('launcher', 'click', () => this.show());
     this.on('collapse', 'click', () => this.show(false));
-    this.on('toggle', 'click', () => actions.enable(!this.state?.enabled));
+    this.on('toggle', 'change', () => actions.enable(this.input('toggle').checked));
+    this.on('pause-all', 'click', () => actions.pauseAll());
+    this.on('walk-toggle', 'change', () => {
+      actions.walk(this.input('walk-toggle').checked);
+      this.input('walk-toggle').checked = this.walking;
+    });
+    for (const [id, key, scale] of [['walk-radius', 'walkRadius', 1], ['walk-interval', 'walkIntervalMs', 1000]] as const) {
+      this.on(id, 'change', () => {
+        const field = this.input(id);
+        const value = Math.round(field.valueAsNumber * scale);
+        if (!field.validity.valid || !validWalkSetting(key, value)) {
+          field.value = String(this.settings[key] / scale);
+          this.el('walk-input-error').textContent = key === 'walkRadius'
+            ? '半徑請輸入至少 1 格的整數，已保留原設定。'
+            : '間隔請輸入至少 0.1 秒，最多三位小數，已保留原設定。';
+          return;
+        }
+        this.el('walk-input-error').textContent = '';
+        this.settings[key] = value;
+        this.commit();
+      });
+    }
     this.on('loop-stage', 'change', () => { this.settings.loopStageName = this.input('loop-stage').value.trim().slice(0, 120); this.commit(); });
     this.on('loop-capture', 'click', () => {
+      this.el('loop-status').hidden = false;
       const name = currentStageName();
       if (!name) { this.el('loop-status').textContent = '請先開啟隊長關卡選單，或在戰鬥中讀取目前關卡。'; return; }
       this.settings.loopStageName = name.slice(0, 120); this.commit();
       this.el('loop-status').textContent = `已設定「${name}」`;
     });
-    this.on('loop-toggle', 'click', () => actions.loop(!this.loopState?.enabled));
+    this.on('loop-toggle', 'change', () => actions.loop(this.input('loop-toggle').checked));
     this.on('manage', 'click', () => {
       const editor = this.el('profile-editor'); editor.hidden = !editor.hidden;
       this.input('profile-name').value = this.profile().name;
@@ -141,10 +179,10 @@ export class Panel {
       if (this.addName(this.input('card-name').value)) this.input('card-name').value = '';
     });
     this.on('fallback', 'change', () => {
-      this.settings.fallback = this.select('fallback').value === 'rarity' ? 'rarity' : 'pause'; this.commit();
+      this.settings.fallback = this.input('fallback').checked ? 'rarity' : 'pause'; this.commit();
     });
     this.on('chest-fallback', 'change', () => {
-      this.settings.chestFallback = this.select('chest-fallback').value === 'rarity' ? 'rarity' : 'pause'; this.commit();
+      this.settings.chestFallback = this.input('chest-fallback').checked ? 'rarity' : 'pause'; this.commit();
     });
     this.on('chest-replace', 'change', () => { this.settings.chestAutoReplace = this.input('chest-replace').checked; this.commit(); });
     for (const category of rollCategoryKeys) {
@@ -175,7 +213,10 @@ export class Panel {
   private names(kind: PickKind = this.editingKind): string[] { return kind === 'chest' ? this.profile().chestPriorities : this.profile().priorities; }
   message(message: string): void { this.el('message').textContent = message; }
   show(expanded = true): void {
-    this.expanded = expanded; this.el('panel').hidden = !expanded; this.el('launcher').hidden = expanded;
+    const panel = this.el('panel');
+    panel.hidden = !expanded;
+    this.el('launcher').hidden = expanded;
+    if (expanded) panel.scrollTop = 0;
   }
   private commit(): void { this.renderSettings(); this.actions.save(structuredClone(this.settings)); }
   setSettings(settings: Settings): void { this.settings = structuredClone(settings); this.renderSettings(); }
@@ -201,8 +242,10 @@ export class Panel {
       const option = document.createElement('option'); option.value = p.id; option.textContent = p.name; select.append(option);
     }
     select.value = this.settings.activeProfileId;
-    this.select('fallback').value = this.settings.fallback;
-    this.select('chest-fallback').value = this.settings.chestFallback;
+    this.input('fallback').checked = this.settings.fallback === 'rarity';
+    this.input('chest-fallback').checked = this.settings.chestFallback === 'rarity';
+    if (this.shadow.activeElement !== this.input('walk-radius')) this.input('walk-radius').value = String(this.settings.walkRadius);
+    if (this.shadow.activeElement !== this.input('walk-interval')) this.input('walk-interval').value = String(this.settings.walkIntervalMs / 1000);
     this.input('chest-replace').checked = this.settings.chestAutoReplace;
     this.input('auto-reroll').checked = this.settings.autoReroll;
     this.input('chest-auto-reroll').checked = this.settings.chestAutoReroll;
@@ -217,7 +260,7 @@ export class Panel {
     this.el('priority-help').textContent = this.editingKind === 'chest'
       ? '清單內先選品質最高的道具，品質相同才依順位。拖曳或使用 ↑ ↓ 排序。'
       : this.settings.preferNewSkills ? '清單內橘色優先 → 尚未取得 → 原順位。同類候選由上到下優先。' : '由上到下依序優先。拖曳或使用 ↑ ↓ 排序。';
-    this.el('empty-priorities').textContent = this.editingKind === 'chest' ? '尚未設定寶箱順位。可從目前寶箱加入，或在選牌設定改用最高稀有度。' : '還沒有優先技能。輸入遊戲顯示的名稱，或從下方目前選牌加入。';
+    this.el('empty-priorities').textContent = this.editingKind === 'chest' ? '尚未設定寶箱順位。可從目前寶箱加入，或在上方勾選「寶箱未命中選最高稀有度」。' : '還沒有優先技能。輸入遊戲顯示的名稱，或從下方目前選牌加入。';
     const names = this.names();
     this.el('empty-priorities').hidden = names.length > 0;
     const list = this.el('priorities'); list.replaceChildren();
@@ -275,18 +318,18 @@ export class Panel {
     const kind = state.snapshot?.kind;
     if (kind !== this.lastRoundKind) {
       this.lastRoundKind = kind ?? '';
-      if ((kind === 'levelup' || kind === 'chest') && this.editingKind !== kind && this.shadow.activeElement?.tagName !== 'INPUT') {
+      if ((kind === 'levelup' || kind === 'chest') && this.editingKind !== kind && !this.shadow.activeElement?.matches('input:not([type=checkbox])')) {
         this.editingKind = kind; this.renderSettings(); return;
       }
     }
     this.el('status').textContent = state.status;
-    this.el('mode').textContent = state.enabled ? 'AUTO / 自動選牌' : 'PREVIEW / 預覽';
-    this.el('mode').classList.toggle('on', state.enabled);
-    this.el('toggle').textContent = state.enabled ? '暫停自動選牌' : '啟用自動選牌';
-    if (this.loopState?.enabled) this.el('toggle').textContent = '全部暫停';
-    this.el('toggle').classList.toggle('pause', state.enabled);
-    this.el('launcher').classList.toggle('active', state.enabled);
-    this.el('launcher').textContent = this.loopState?.enabled ? '選牌助手 · 循環中' : state.enabled ? '選牌助手 · 自動' : '♧ 選牌助手';
+    const running = state.enabled || this.walking || !!this.loopState?.enabled;
+    this.el('mode').textContent = running ? 'AUTO / 自動執行中' : 'PREVIEW / 預覽';
+    this.el('mode').classList.toggle('on', running);
+    this.input('toggle').checked = state.enabled;
+    (this.el('pause-all') as HTMLButtonElement).disabled = !running;
+    this.el('launcher').classList.toggle('active', state.enabled || this.walking);
+    this.el('launcher').textContent = this.loopState?.enabled ? '選牌助手 · 循環中' : this.walking ? '選牌助手 · 走動中' : state.enabled ? '選牌助手 · 自動' : '♧ 選牌助手';
     this.el('timer').textContent = state.snapshot?.timer ? `${state.snapshot.timer} · 遊戲倒數仍會繼續，逾時可能自行選牌。` : '';
     const key = JSON.stringify([state.snapshot?.signature, state.snapshot?.closing, state.recommendation, this.profile().priorities, this.profile().chestPriorities]);
     if (key !== this.currentKey) {
@@ -328,10 +371,17 @@ export class Panel {
       }
     }
   }
+  updateWalk(enabled: boolean, status: string): void {
+    this.walking = enabled;
+    this.input('walk-toggle').checked = enabled;
+    this.el('walk-status').hidden = false;
+    this.el('walk-status').textContent = status;
+    if (this.state) this.update(this.state);
+  }
   updateLoop(state: LoopState): void {
     this.loopState = state;
-    this.el('loop-toggle').textContent = state.enabled ? '暫停循環與選牌' : '啟用循環刷關';
-    this.el('loop-toggle').classList.toggle('pause', state.enabled);
+    this.input('loop-toggle').checked = state.enabled;
+    this.el('loop-status').hidden = state.status === '循環尚未啟用';
     this.el('loop-status').textContent = state.status;
     this.el('loop-count').textContent = `本分頁已結算 ${state.completed} 場`;
     const logs = this.el('loop-logs');

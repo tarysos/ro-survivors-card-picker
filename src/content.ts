@@ -3,28 +3,38 @@ import { PickerEngine } from './engine';
 import { Panel } from './panel';
 import { loadSettings, saveSettings } from './storage';
 import { RunLoop } from './run-loop';
+import { LocalWalk } from './walk';
 
 async function main(): Promise<void> {
   if (document.getElementById('ro-picker-assistant')) return;
   const settings = await loadSettings();
   const engine = new PickerEngine(settings);
   const loop = new RunLoop(settings.loopStageName);
-  const pauseAll = () => { if (loop.state.enabled) loop.stop(); if (engine.state.enabled) engine.setEnabled(false); };
+  const walk = new LocalWalk(settings, () => panel.updateWalk(walk.enabled, walk.status));
+  const pauseAll = () => {
+    if (walk.enabled) walk.stop();
+    if (loop.state.enabled) loop.stop();
+    if (engine.state.enabled) engine.setEnabled(false);
+  };
   let pendingSave = Promise.resolve();
   const panel = new Panel(structuredClone(settings), {
     save(next) {
       engine.updateSettings(next);
+      walk.updateSettings(next);
       loop.updateStage(next.loopStageName);
       pendingSave = pendingSave.then(() => saveSettings(next)).catch(() => {
+        if (walk.enabled) walk.stop('設定儲存失敗，走動已停止');
         engine.pauseWithError('設定儲存失敗，已暫停。請重新整理遊戲後再試。');
         if (loop.state.enabled) loop.stop('設定儲存失敗，循環已暫停');
         panel.message('設定未儲存，請重新整理後確認清單。');
       });
     },
-    enable: enabled => enabled ? engine.setEnabled(true) : pauseAll(),
+    pauseAll,
+    enable: enabled => engine.setEnabled(enabled),
+    walk: enabled => enabled ? walk.start() : walk.stop(),
     clearLogs: () => engine.clearLogs(),
     loop(enabled) {
-      if (!enabled) { pauseAll(); return; }
+      if (!enabled) { loop.stop(); return; }
       loop.start();
       if (loop.state.enabled) engine.setEnabled(true);
     },
@@ -52,12 +62,15 @@ async function main(): Promise<void> {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes[STORAGE_KEY]) {
       const next = sanitizeSettings(changes[STORAGE_KEY].newValue);
-      engine.updateSettings(next); loop.updateStage(next.loopStageName); panel.setSettings(next);
+      engine.updateSettings(next); walk.updateSettings(next); loop.updateStage(next.loopStageName); panel.setSettings(next);
     }
   });
   chrome.runtime.onMessage.addListener((message, _sender, respond) => {
     if (message?.type === 'RO_PICKER_SHOW') { panel.show(); respond({ ok: true }); }
-    else if (message?.type === 'RO_PICKER_STATUS') respond({ enabled: engine.state.enabled || loop.state.enabled, status: loop.state.enabled ? `${loop.state.status} · 已結算 ${loop.state.completed} 場` : engine.state.status });
+    else if (message?.type === 'RO_PICKER_STATUS') {
+      const status = loop.state.enabled ? `${loop.state.status} · 已結算 ${loop.state.completed} 場` : engine.state.status;
+      respond({ enabled: engine.state.enabled || loop.state.enabled || walk.enabled, status: walk.enabled ? `${status} · ${walk.status}` : status });
+    }
     else if (message?.type === 'RO_PICKER_PAUSE') { pauseAll(); respond({ ok: true }); }
   });
 }

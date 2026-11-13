@@ -177,6 +177,11 @@
 
   // src/core.ts
   var STORAGE_KEY = "roPickerSettings";
+  var minWalkIntervalMs = 100;
+  function validWalkSetting(key, value) {
+    const minimum = key === "walkRadius" ? 1 : minWalkIntervalMs;
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= minimum;
+  }
   var normalizeName = (value) => value.normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase();
   var emptyProfile = (id, name) => ({
     id,
@@ -197,6 +202,8 @@
     autoReroll: true,
     chestAutoReroll: true,
     loopStageName: "",
+    walkRadius: 3,
+    walkIntervalMs: 2e3,
     preferNewSkills: true,
     autoCollectLoot: true,
     autoRollLoot: true,
@@ -250,6 +257,8 @@
     base.autoReroll = data.autoReroll !== false;
     base.chestAutoReroll = data.chestAutoReroll !== false;
     base.loopStageName = typeof data.loopStageName === "string" ? data.loopStageName.trim().slice(0, 120) : "";
+    if (validWalkSetting("walkRadius", data.walkRadius)) base.walkRadius = data.walkRadius;
+    if (validWalkSetting("walkIntervalMs", data.walkIntervalMs)) base.walkIntervalMs = data.walkIntervalMs;
     base.preferNewSkills = data.preferNewSkills !== false;
     base.autoCollectLoot = data.autoCollectLoot !== false;
     base.autoRollLoot = data.autoRollLoot !== false;
@@ -830,7 +839,7 @@
   };
 
   // src/panel.css
-  var panel_default = ':host { all: initial; color-scheme: dark; font-family: "Segoe UI", "Microsoft JhengHei", sans-serif; font-size: 13px; color: #e9edf5; }\n* { box-sizing: border-box; }\nbutton, input, select { font: inherit; }\nbutton { cursor: pointer; }\nbutton:disabled { cursor: default; opacity: .4; }\nbutton:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid #6bd5b7; outline-offset: 2px; }\n.launcher { position: fixed; right: 18px; top: 18px; padding: 11px 15px; color: #d9fff3; background: #182b2b; border: 1px solid #4c7b71; border-radius: 12px; box-shadow: 0 8px 30px #0006; }\n.launcher.active::before { content: "\u25CF "; color: #6bdfb5; }\n.panel { position: fixed; right: 18px; top: 18px; width: 350px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 36px); overflow: auto; background: #151c27; border: 1px solid #334153; border-radius: 16px; box-shadow: 0 16px 64px #0009; }\n[hidden] { display: none !important; }\nheader { display: flex; align-items: center; padding: 17px 18px 13px; gap: 10px; border-bottom: 1px solid #2b3544; }\n.logo { color: #77dbbb; border: 1px solid #527a72; border-radius: 8px; padding: 6px; font-size: 18px; }\nheader strong { display: block; font-size: 16px; letter-spacing: .5px; }\nheader small { color: #99a7bc; font-size: 11px; }\nheader .icon { margin-left: auto; }\nbutton { color: #dce5f4; background: #253043; border: 1px solid #3b4a60; border-radius: 7px; padding: 7px 10px; }\nbutton:hover:not(:disabled) { background: #334158; }\n.icon { min-width: 28px; padding: 5px 7px; }\n.primary { color: #10271f; background: #77dbbb; border-color: #77dbbb; font-weight: 700; }\n.primary:hover:not(:disabled) { background: #a2ebd3; }\n.pause { background: #693c30; border-color: #9a5d46; color: #ffe0cc; }\n.pause:hover:not(:disabled) { background: #80503f; color: #ffe0cc; }\n.body { padding: 14px 16px 16px; }\n.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }\n.mode { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #91a3bc; }\n.mode.on { color: #77dbbb; }\n.status { margin: 10px 0 5px; line-height: 1.7; font-size: 12px; color: #d6e4f3; min-height: 21px; }\n.note, .empty { color: #96a5ba; font-size: 11px; line-height: 1.7; }\n.timer { color: #ffc280; font-size: 11px; line-height: 1.7; }\n.section { margin-top: 16px; padding-top: 14px; border-top: 1px solid #2b3544; }\n.label { display: block; color: #c2cfdf; font-size: 12px; font-weight: 600; margin-bottom: 8px; }\n.row { display: flex; align-items: center; gap: 6px; }\ninput, select { min-width: 0; width: 100%; color: #e8edf6; background: #0f1520; border: 1px solid #344154; border-radius: 7px; padding: 8px; }\ninput::placeholder { color: #7f90a8; }\n.row input, .row select { flex: 1; }\n.row button { flex-shrink: 0; }\n.loop-actions { margin-top: 10px; flex-wrap: wrap; }\n.loop-actions button { flex: 1; font-size: 11px; }\n.kind-tabs { display: flex; gap: 6px; margin-top: 12px; }\n.kind-tabs button { flex: 1; font-size: 12px; }\n.kind-tabs button[aria-pressed="true"] { color: #9fe8d1; border-color: #538c7b; background: #213d35; }\ndetails .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }\ndetails .checkbox-row input { width: 15px; height: 15px; margin: 0; accent-color: #77dbbb; }\n.delay-range { align-items: flex-end; }\n.roll-rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }\n.roll-rules label { margin: 0; font-size: 12px; color: #c2cfdf; }\n.delay-range label { flex: 1; min-width: 0; font-size: 11px; color: #96a5ba; margin-top: 5px; }\n.delay-range > span { padding-bottom: 8px; color: #96a5ba; }\nol { margin: 10px 0; padding: 0; list-style: none; max-height: 220px; overflow: auto; }\n.priority { display: flex; align-items: center; gap: 6px; padding: 7px 0; border-bottom: 1px solid #252f3e; }\n.rank { color: #77dbbb; width: 20px; font-variant-numeric: tabular-nums; text-align: center; flex-shrink: 0; }\n.rule-toggle { font-size: 11px; padding: 4px; flex-shrink: 0; }\n.rule-toggle.focus[aria-pressed="true"] { color: #b3f8df; background: #274c40; border-color: #77bda7; }\n.rule-toggle.banish[aria-pressed="true"] { color: #ffd0b8; background: #59392e; border-color: #bd8b70; }\n.name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }\n.priority .icon { font-size: 11px; min-width: 25px; padding: 4px; }\n.priority[draggable="true"] { cursor: grab; }\n.priority.drag-over { background: #284139; }\n.current { display: grid; gap: 7px; }\n.card { padding: 9px 10px; border: 1px solid #334153; border-radius: 8px; background: #111824; }\n.card.recommended { border-color: #68c7aa; background: #1a302c; }\n.card .row { align-items: flex-start; }\n.card strong { flex: 1; font-size: 12px; overflow-wrap: anywhere; }\n.card small { display: block; color: #9eb0c5; font-size: 10px; margin-top: 4px; }\n.card button { font-size: 11px; padding: 3px 7px; }\n.reason { color: #8ad6bf; font-size: 10px; margin-top: 5px; line-height: 1.6; }\ndetails summary { cursor: pointer; font-size: 12px; color: #c2cfdf; }\ndetails label { display: block; margin-top: 12px; }\ndetails select, details input { margin-top: 5px; }\n.log { margin: 9px 0; max-height: 150px; overflow: auto; }\n.log p { margin: 0 0 8px; color: #bcc9db; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }\n.log time { color: #768ba6; margin-right: 6px; }\n.message { color: #ffcb8a; font-size: 11px; min-height: 0; line-height: 1.6; margin-top: 6px; }\n.profile-editor { padding: 10px 0 0; }\n.profile-editor .row + .row { margin-top: 8px; }\nfooter { font-size: 10px; color: #7e91ab; margin-top: 14px; line-height: 1.7; }\n@media (max-width: 600px) { .panel { right: 12px; top: 12px; max-height: calc(100dvh - 24px); } }\n';
+  var panel_default = ':host { all: initial; color-scheme: dark; font-family: "Segoe UI", "Microsoft JhengHei", sans-serif; font-size: 13px; color: #e9edf5; }\n* { box-sizing: border-box; }\nbutton, input, select { font: inherit; }\nbutton { cursor: pointer; }\nbutton:disabled { cursor: default; opacity: .4; }\nbutton:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid #6bd5b7; outline-offset: 2px; }\n.launcher { position: fixed; right: 18px; top: 18px; padding: 11px 15px; color: #d9fff3; background: #182b2b; border: 1px solid #4c7b71; border-radius: 12px; box-shadow: 0 8px 30px #0006; }\n.launcher.active::before { content: "\u25CF "; color: #6bdfb5; }\n.panel { position: fixed; right: 18px; top: 18px; width: 350px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 36px); overflow: auto; background: #151c27; border: 1px solid #334153; border-radius: 16px; box-shadow: 0 16px 64px #0009; }\n[hidden] { display: none !important; }\nheader { display: flex; align-items: center; padding: 17px 18px 13px; gap: 10px; border-bottom: 1px solid #2b3544; }\n.logo { color: #77dbbb; border: 1px solid #527a72; border-radius: 8px; padding: 6px; font-size: 18px; }\nheader strong { display: block; font-size: 16px; letter-spacing: .5px; }\nheader small { color: #99a7bc; font-size: 11px; }\nheader .icon { margin-left: auto; }\nbutton { color: #dce5f4; background: #253043; border: 1px solid #3b4a60; border-radius: 7px; padding: 7px 10px; }\nbutton:hover:not(:disabled) { background: #334158; }\n.icon { min-width: 28px; padding: 5px 7px; }\n.body { padding: 14px 16px 16px; }\n.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }\n#automation { margin-bottom: 12px; }\n#automation .toolbar { margin-bottom: 8px; }\n#automation .toolbar strong { font-size: 14px; }\n#pause-all { padding: 4px 9px; font-size: 11px; }\n.checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; }\n.checks label { display: flex; align-items: center; gap: 6px; min-height: 27px; cursor: pointer; font-size: 12px; line-height: 1.4; }\n.checks input { flex: none; width: 15px; height: 15px; padding: 0; margin: 0; accent-color: #77dbbb; cursor: pointer; }\n.run-checks { grid-template-columns: repeat(3, minmax(0, 1fr)); }\n.run-checks label { color: #e2ede9; font-weight: 600; }\n.pick-rules { min-width: 0; margin: 11px 0 0; padding: 5px 0 0; border: 0; border-top: 1px solid #334153; }\n.pick-rules legend { padding: 0 7px 0 0; color: #a4b5c9; font-size: 11px; }\n.mode { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #91a3bc; }\n.mode.on { color: #77dbbb; }\n.status { margin: 10px 0 5px; line-height: 1.7; font-size: 12px; color: #d6e4f3; min-height: 21px; }\n.note, .empty { color: #96a5ba; font-size: 11px; line-height: 1.7; }\n.timer { color: #ffc280; font-size: 11px; line-height: 1.7; }\n.section { margin-top: 16px; padding-top: 14px; border-top: 1px solid #2b3544; }\n.label { display: block; color: #c2cfdf; font-size: 12px; font-weight: 600; margin-bottom: 8px; }\n.row { display: flex; align-items: center; gap: 6px; }\ninput, select { min-width: 0; width: 100%; color: #e8edf6; background: #0f1520; border: 1px solid #344154; border-radius: 7px; padding: 8px; }\ninput::placeholder { color: #7f90a8; }\n.row input, .row select { flex: 1; }\n.row button { flex-shrink: 0; }\n.loop-actions { margin-top: 10px; flex-wrap: wrap; }\n.loop-actions button { flex: 1; font-size: 11px; }\n.kind-tabs { display: flex; gap: 6px; margin-top: 12px; }\n.kind-tabs button { flex: 1; font-size: 12px; }\n.kind-tabs button[aria-pressed="true"] { color: #9fe8d1; border-color: #538c7b; background: #213d35; }\n.delay-range { align-items: flex-end; }\n.roll-rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }\n.roll-rules label { margin: 0; font-size: 12px; color: #c2cfdf; }\n.delay-range label { flex: 1; min-width: 0; font-size: 11px; color: #96a5ba; margin-top: 5px; }\n.delay-range > span { padding-bottom: 8px; color: #96a5ba; }\nol { margin: 10px 0; padding: 0; list-style: none; max-height: 220px; overflow: auto; }\n.priority { display: flex; align-items: center; gap: 6px; padding: 7px 0; border-bottom: 1px solid #252f3e; }\n.rank { color: #77dbbb; width: 20px; font-variant-numeric: tabular-nums; text-align: center; flex-shrink: 0; }\n.rule-toggle { font-size: 11px; padding: 4px; flex-shrink: 0; }\n.rule-toggle.focus[aria-pressed="true"] { color: #b3f8df; background: #274c40; border-color: #77bda7; }\n.rule-toggle.banish[aria-pressed="true"] { color: #ffd0b8; background: #59392e; border-color: #bd8b70; }\n.name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }\n.priority .icon { font-size: 11px; min-width: 25px; padding: 4px; }\n.priority[draggable="true"] { cursor: grab; }\n.priority.drag-over { background: #284139; }\n.current { display: grid; gap: 7px; }\n.card { padding: 9px 10px; border: 1px solid #334153; border-radius: 8px; background: #111824; }\n.card.recommended { border-color: #68c7aa; background: #1a302c; }\n.card .row { align-items: flex-start; }\n.card strong { flex: 1; font-size: 12px; overflow-wrap: anywhere; }\n.card small { display: block; color: #9eb0c5; font-size: 10px; margin-top: 4px; }\n.card button { font-size: 11px; padding: 3px 7px; }\n.reason { color: #8ad6bf; font-size: 10px; margin-top: 5px; line-height: 1.6; }\ndetails summary { cursor: pointer; font-size: 12px; color: #c2cfdf; }\ndetails label { display: block; margin-top: 12px; }\ndetails select, details input { margin-top: 5px; }\n.log { margin: 9px 0; max-height: 150px; overflow: auto; }\n.log p { margin: 0 0 8px; color: #bcc9db; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }\n.log time { color: #768ba6; margin-right: 6px; }\n.message { color: #ffcb8a; font-size: 11px; min-height: 0; line-height: 1.6; margin-top: 6px; }\n.profile-editor { padding: 10px 0 0; }\n.profile-editor .row + .row { margin-top: 8px; }\nfooter { font-size: 10px; color: #7e91ab; margin-top: 14px; line-height: 1.7; }\n@media (max-width: 600px) { .panel { right: 12px; top: 12px; max-height: calc(100dvh - 24px); } }\n';
 
   // src/run-adapter.ts
   var byId = (id) => document.getElementById(id);
@@ -903,26 +912,53 @@
 .panel,.launcher { pointer-events:auto; }</style>
       <button class="launcher" id="launcher" aria-label="\u958B\u555F RO \u9078\u724C\u52A9\u624B">\u2667 \u9078\u724C\u52A9\u624B</button>
       <section class="panel" id="panel" aria-label="RO \u9078\u724C\u52A9\u624B" hidden>
-        <header><span class="logo" aria-hidden="true">\u2667</span><div><strong>RO \u9078\u724C\u52A9\u624B</strong><small>\u4F60\u7684\u6E05\u55AE\uFF0C\u4F60\u7684\u6253\u6CD5 \xB7 v0.6.0</small></div><button class="icon" id="collapse" aria-label="\u6536\u5408\u9762\u677F">\u2212</button></header>
+        <header><span class="logo" aria-hidden="true">\u2667</span><div><strong>RO \u9078\u724C\u52A9\u624B</strong><small>\u4F60\u7684\u6E05\u55AE\uFF0C\u4F60\u7684\u6253\u6CD5 \xB7 v0.7.2</small></div><button class="icon" id="collapse" aria-label="\u6536\u5408\u9762\u677F">\u2212</button></header>
         <div class="body">
-          <div class="toolbar"><span class="mode" id="mode">PREVIEW / \u9810\u89BD</span><button id="toggle" class="primary">\u555F\u7528\u81EA\u52D5\u9078\u724C</button></div>
+          <section id="automation" aria-labelledby="automation-title">
+            <div class="toolbar"><strong id="automation-title">\u81EA\u52D5\u529F\u80FD</strong><button id="pause-all" disabled>\u5168\u90E8\u66AB\u505C</button></div>
+            <div class="checks run-checks">
+              <label><input type="checkbox" id="toggle">\u81EA\u52D5\u9078\u724C</label>
+              <label><input type="checkbox" id="loop-toggle">\u5FAA\u74B0\u5237\u95DC</label>
+              <label><input type="checkbox" id="walk-toggle">\u5C0F\u7BC4\u570D\u8D70\u52D5</label>
+            </div>
+            <fieldset class="pick-rules"><legend>\u81EA\u52D5\u9078\u724C\u555F\u7528\u6642</legend>
+              <div class="checks">
+                <label><input type="checkbox" id="auto-collect-loot">\u81EA\u52D5\u53D6\u5F97\u6389\u843D\u7269</label>
+                <label><input type="checkbox" id="auto-roll-loot">\u7D44\u968A\u81EA\u52D5\u64F2\u9AB0</label>
+                <label><input type="checkbox" id="auto-reroll">\u6280\u80FD\u672A\u547D\u4E2D\u6642\u91CD\u62BD</label>
+                <label><input type="checkbox" id="chest-auto-reroll">\u5BF6\u7BB1\u672A\u547D\u4E2D\u6642\u91CD\u62BD</label>
+                <label title="\u6280\u80FD\u6E05\u55AE\u672A\u547D\u4E2D\u4E14\u7121\u6CD5\u91CD\u62BD\u6642\uFF0C\u9078\u64C7\u5DF2\u8FA8\u8B58\u7684\u6700\u9AD8\u7A00\u6709\u5EA6"><input type="checkbox" id="fallback">\u6280\u80FD\u672A\u547D\u4E2D\u9078\u6700\u9AD8\u7A00\u6709\u5EA6</label>
+                <label title="\u5BF6\u7BB1\u6E05\u55AE\u672A\u547D\u4E2D\u4E14\u7121\u6CD5\u91CD\u62BD\u6642\uFF0C\u9078\u64C7\u5DF2\u8FA8\u8B58\u7684\u6700\u9AD8\u7A00\u6709\u5EA6"><input type="checkbox" id="chest-fallback">\u5BF6\u7BB1\u672A\u547D\u4E2D\u9078\u6700\u9AD8\u7A00\u6709\u5EA6</label>
+                <label title="\u6E05\u55AE\u5167\u6A58\u8272\u6280\u80FD\u512A\u5148\uFF0C\u5176\u6B21\u70BA\u5C1A\u672A\u53D6\u5F97\u7684\u6280\u80FD"><input type="checkbox" id="prefer-new-skills">\u5148\u62FF\u9F4A\u6E05\u55AE\u6280\u80FD</label>
+                <label><input type="checkbox" id="chest-replace">\u5BF6\u7BB1\u81EA\u52D5\u78BA\u8A8D\u66FF\u63DB</label>
+              </div>
+            </fieldset>
+          </section>
+          <span class="mode" id="mode">PREVIEW / \u9810\u89BD</span>
           <p class="status" id="status" role="status" aria-live="polite"></p>
+          <p class="status" id="walk-status" role="status" hidden></p>
+          <p class="status" id="loop-status" role="status" hidden></p>
           <div class="timer" id="timer"></div>
-          <div class="note">\u91CD\u65B0\u6574\u7406\u5F8C\u56DE\u5230\u9810\u89BD\u6A21\u5F0F\u3002</div>
           <details class="section" id="roll-settings"><summary>\u7D44\u968A\u5206\u5BF6</summary>
-            <label class="checkbox-row"><input id="auto-roll-loot" type="checkbox">\u4F9D\u7A2E\u985E\u81EA\u52D5\u64F2\u9AB0</label>
-            <p class="note">\u555F\u7528\u81EA\u52D5\u9078\u724C\u5F8C\u751F\u6548\u3002\u7121\u6CD5\u8FA8\u8B58\u7A2E\u985E\u7684\u6389\u843D\u7269\u6703\u5957\u7528\u300C\u5176\u4ED6\u300D\u3002</p>
+            <p class="note">\u7121\u6CD5\u8FA8\u8B58\u7A2E\u985E\u7684\u6389\u843D\u7269\u6703\u5957\u7528\u300C\u5176\u4ED6\u300D\u3002</p>
             <div class="roll-rules">${rollCategoryKeys.map((key) => `
               <div><label for="roll-${key}">${rollCategories[key]}</label><select id="roll-${key}">
                 <option value="need">Need\uFF08\u9700\u6C42\uFF09</option><option value="greed">Greed\uFF08\u8CAA\u5A6A\uFF09</option>
               </select></div>`).join("")}</div>
           </details>
+          <details class="section" id="walk-settings"><summary>\u5C0F\u7BC4\u570D\u8D70\u52D5</summary>
+            <div class="row delay-range">
+              <label>\u6D3B\u52D5\u534A\u5F91\uFF08\u683C\uFF09<input id="walk-radius" type="number" min="1" step="1" required></label>
+              <label>\u6B65\u4F10\u9593\u9694\uFF08\u79D2\uFF09<input id="walk-interval" type="number" min="${minWalkIntervalMs / 1e3}" step="0.001" required></label>
+            </div>
+            <div id="walk-input-error" class="message" role="status"></div>
+            <p class="note">\u624B\u52D5\u79FB\u52D5\u6642\u66AB\u505C\u3002\u653E\u958B\u64CD\u4F5C 10 \u79D2\u5F8C\uFF0C\u4EE5\u89D2\u8272\u7576\u4E0B\u7684\u4F4D\u7F6E\u70BA\u4E2D\u5FC3\u7E7C\u7E8C\u8D70\u52D5\u3002</p>
+          </details>
           <details class="section" id="loop-settings"><summary>\u5FAA\u74B0\u5237\u95DC \xB7 \u9060\u5F81\u968A\u9577</summary>
             <label class="label" for="loop-stage">\u5FAA\u74B0\u95DC\u5361</label>
             <input id="loop-stage" list="loop-stages" maxlength="120" placeholder="\u8F38\u5165\u904A\u6232\u4E2D\u7684\u5B8C\u6574\u95DC\u5361\u540D\u7A31" autocomplete="off">
             <datalist id="loop-stages"></datalist>
-            <div class="row loop-actions"><button id="loop-capture">\u4F7F\u7528\u76EE\u524D\u95DC\u5361</button><button id="loop-toggle" class="primary">\u555F\u7528\u5FAA\u74B0\u5237\u95DC</button></div>
-            <p class="status" id="loop-status" role="status" aria-live="polite">\u5FAA\u74B0\u5C1A\u672A\u555F\u7528</p>
+            <div class="row loop-actions"><button id="loop-capture">\u4F7F\u7528\u76EE\u524D\u95DC\u5361</button></div>
             <p class="note" id="loop-count">\u672C\u5206\u9801\u5DF2\u7D50\u7B97 0 \u5834</p>
             <p class="note">\u53EF\u5728\u95DC\u5361\u9078\u55AE\u6216\u6230\u9B25\u4E2D\u8B80\u53D6\u540D\u7A31\uFF1B\u958B\u555F\u968A\u9577\u9078\u55AE\u5F8C\u4E5F\u53EF\u5F9E\u8F38\u5165\u6846\u9078\u95DC\u3002\u6CBF\u7528\u904A\u6232\u76EE\u524D\u96E3\u5EA6\uFF0C\u52DD\u5229\u6216\u6B7B\u4EA1\u7D50\u7B97\u5F8C\u7B49 2.5 \u79D2\u56DE\u57CE\uFF0C\u518D\u6B21\u51FA\u767C\u3002\u555F\u7528\u5FAA\u74B0\u6703\u4E00\u4F75\u555F\u7528\u81EA\u52D5\u9078\u724C\u3002</p>
             <p class="note">\u56DE\u57CE\u51FA\u751F\u9EDE\u53EF\u76F4\u63A5\u8207\u968A\u9577\u4EA4\u8AC7\uFF1B\u82E5\u5DF2\u8D70\u9060\uFF0C\u8ACB\u5148\u9760\u8FD1\u968A\u9577\u3002\u652F\u63F4\u55AE\u4EBA\u4E00\u822C\u95DC\u5361\uFF1B\u5287\u60C5\u3001\u7D44\u968A\u8207\u5176\u4ED6\u5C0D\u8A71\u6703\u66AB\u505C\u3002\u5206\u9801\u9700\u7559\u5728\u524D\u666F\u3002</p>
@@ -944,26 +980,13 @@
           </div>
           <div class="section"><span class="label">\u76EE\u524D\u9078\u724C</span><div id="current" class="current"><div class="empty">\u5347\u7D1A\u6216\u5BF6\u7BB1\u9078\u724C\u51FA\u73FE\u5F8C\uFF0C\u6703\u5728\u9019\u88E1\u986F\u793A\u3002</div></div></div>
           <details class="section" id="advanced"><summary>\u9078\u724C\u8A2D\u5B9A</summary>
-            <label class="checkbox-row"><input id="prefer-new-skills" type="checkbox">\u5148\u62FF\u9F4A\u6E05\u55AE\u6280\u80FD\uFF08\u6A58\u8272\u512A\u5148\uFF09</label>
-            <p class="note">\u6E05\u55AE\u5167\u6A58\u8272\uFF08\u50B3\u8AAA\uFF09\u724C\u512A\u5148\uFF1B\u6C92\u6709\u6A58\u8272\u6642\u5148\u53D6\u5F97\u65B0\u6280\u80FD\uFF0C\u518D\u7167\u9806\u4F4D\u5347\u7D1A\u3002\u540C\u985E\u5019\u9078\u4ECD\u4F9D\u9806\u4F4D\u3002\u4E0D\u70BA\u4E86\u88DC\u9F4A\u6280\u80FD\u9078\u5165\u6E05\u55AE\u5916\u7684\u724C\uFF1B\u5DF2\u53D6\u5F97\u7684\u653E\u9010\u5C0D\u8C61\u4ECD\u6392\u9664\u3002</p>
-            <label class="checkbox-row"><input id="auto-reroll" type="checkbox">\u6280\u80FD\u6C92\u6709\u76EE\u6A19\u724C\u6642\u5168\u90E8\u91CD\u62BD</label>
-            <label class="checkbox-row"><input id="chest-auto-reroll" type="checkbox">\u5BF6\u7BB1\u6C92\u6709\u76EE\u6A19\u724C\u6642\u5168\u90E8\u91CD\u62BD</label>
-            <p class="note">\u6709\u8A2D\u5B9A\u76EE\u6A19\u6E05\u55AE\u624D\u6703\u91CD\u62BD\u3002\u91CD\u62BD\u6B21\u6578\u7528\u5B8C\u5F8C\uFF0C\u4F9D\u4E0B\u65B9\u672A\u547D\u4E2D\u898F\u5247\u8655\u7406\u3002</p>
-            <label class="note" for="fallback">\u6280\u80FD\u6E05\u55AE\u6C92\u6709\u547D\u4E2D\u6642</label>
-            <select id="fallback"><option value="pause">\u4EA4\u7531\u6211\u624B\u52D5\u9078\u64C7</option><option value="rarity">\u9078\u6700\u9AD8\u7A00\u6709\u5EA6\uFF08\u5FC5\u9808\u5168\u90E8\u8FA8\u8B58\u6210\u529F\uFF09</option></select>
-            <label class="note" for="chest-fallback">\u5BF6\u7BB1\u6E05\u55AE\u6C92\u6709\u547D\u4E2D\u6642</label>
-            <select id="chest-fallback"><option value="pause">\u4EA4\u7531\u6211\u624B\u52D5\u9078\u64C7</option><option value="rarity">\u9078\u6700\u9AD8\u7A00\u6709\u5EA6\uFF08\u5FC5\u9808\u5168\u90E8\u8FA8\u8B58\u6210\u529F\uFF09</option></select>
-            <label class="checkbox-row"><input id="chest-replace" type="checkbox">\u5BF6\u7BB1\u81EA\u52D5\u78BA\u8A8D\u66FF\u63DB</label>
-            <p class="note">\u6E05\u55AE\u5167\u5019\u9078\u724C\u5148\u6BD4\u54C1\u8CEA\uFF0C\u540C\u54C1\u8CEA\u518D\u6BD4\u9806\u4F4D\uFF1B\u52FE\u9078\u5F8C\u6703\u78BA\u8A8D\u66FF\u63DB\u8A72\u6B04\u4F4D\u539F\u6709\u9053\u5177\u3002\u95DC\u9589\u5F8C\uFF0C\u9700\u66FF\u63DB\u7684\u724C\u4EA4\u7531\u4F60\u8655\u7406\u3002</p>
-            <label class="checkbox-row"><input id="auto-collect-loot" type="checkbox">\u64BF\u5230\u4EFB\u4F55\u7269\u54C1\u6642\u81EA\u52D5\u9EDE\u300C\u53D6\u5F97\u300D</label>
-            <p class="note">\u555F\u7528\u81EA\u52D5\u9078\u724C\u5F8C\uFF0C\u6703\u7B49\u52D5\u756B\u7D50\u675F\u518D\u9EDE\u300C\u53D6\u5F97\u300D\u3002</p>
             <div class="note" style="margin-top:12px">\u6BCF\u8F2A\u96A8\u6A5F\u9078\u724C\u5EF6\u9072\uFF08\u6BEB\u79D2\uFF09</div>
             <div class="row delay-range"><label for="delay-min">\u6700\u77ED<input id="delay-min" type="number" min="500" max="5000" step="100"></label><span>\uFF5E</span><label for="delay-max">\u6700\u9577<input id="delay-max" type="number" min="500" max="5000" step="100"></label></div>
             <p class="note">\u9810\u8A2D 500\uFF5E1500 \u6BEB\u79D2\uFF0C\u6BCF\u8F2A\u91CD\u65B0\u62BD\u53D6\u4E00\u6B21\u3002\u82E5\u904A\u6232\u52D5\u756B\u5C1A\u672A\u7D50\u675F\uFF0C\u6703\u7B49\u5230\u53EF\u64CD\u4F5C\u6642\u624D\u9EDE\u9078\u3002</p>
             <p class="note">\u95DC\u9589\u300C\u5148\u62FF\u9F4A\u300D\u6642\uFF0C\u6280\u80FD\u5148\u6BD4\u9806\u4F4D\uFF0C\u518D\u6BD4\u7A00\u6709\u5EA6\uFF1B\u5BF6\u7BB1\u6E05\u55AE\u5167\u5148\u6BD4\u54C1\u8CEA\uFF08\u7A00\u6709\u5EA6\uFF09\uFF0C\u518D\u6BD4\u9806\u4F4D\u3002\u7686\u76F8\u540C\u6642\u7531\u5DE6\u81F3\u53F3\u3002\u5BF6\u7BB1\u540D\u7A31\u6703\u5FFD\u7565\u7D50\u5C3E\u7684 +1\u3001+2 \u7B49\u5F37\u5316\u6578\u5B57\uFF1B\u5207\u63DB\u8A9E\u8A00\u5F8C\u8ACB\u78BA\u8A8D\u6E05\u55AE\u3002</p>
           </details>
           <details class="section"><summary>\u672C\u5206\u9801\u7D00\u9304\uFF08\u6700\u8FD1 30 \u7B46\uFF09</summary><div id="logs" class="log"></div><button id="clear-logs">\u6E05\u9664\u7D00\u9304</button></details>
-          <footer>\u8A2D\u5B9A\u5132\u5B58\u5728\u6B64\u700F\u89BD\u5668\u3002\u81EA\u52D5\u9078\u724C\u958B\u95DC\u53EA\u4F5C\u7528\u65BC\u76EE\u524D\u5206\u9801\u3002</footer>
+          <footer>\u9078\u724C\u898F\u5247\u6703\u5132\u5B58\u5728\u6B64\u700F\u89BD\u5668\u3002\u91CD\u65B0\u6574\u7406\u5F8C\uFF0C\u8ACB\u518D\u52FE\u9078\u8981\u555F\u52D5\u7684\u529F\u80FD\u3002</footer>
         </div>
       </section>`;
       document.documentElement.append(host);
@@ -971,12 +994,32 @@
       for (const name of ["pointerdown", "pointerup", "click", "wheel"]) this.shadow.addEventListener(name, (event) => event.stopPropagation());
       this.on("launcher", "click", () => this.show());
       this.on("collapse", "click", () => this.show(false));
-      this.on("toggle", "click", () => actions.enable(!this.state?.enabled));
+      this.on("toggle", "change", () => actions.enable(this.input("toggle").checked));
+      this.on("pause-all", "click", () => actions.pauseAll());
+      this.on("walk-toggle", "change", () => {
+        actions.walk(this.input("walk-toggle").checked);
+        this.input("walk-toggle").checked = this.walking;
+      });
+      for (const [id, key, scale] of [["walk-radius", "walkRadius", 1], ["walk-interval", "walkIntervalMs", 1e3]]) {
+        this.on(id, "change", () => {
+          const field = this.input(id);
+          const value = Math.round(field.valueAsNumber * scale);
+          if (!field.validity.valid || !validWalkSetting(key, value)) {
+            field.value = String(this.settings[key] / scale);
+            this.el("walk-input-error").textContent = key === "walkRadius" ? "\u534A\u5F91\u8ACB\u8F38\u5165\u81F3\u5C11 1 \u683C\u7684\u6574\u6578\uFF0C\u5DF2\u4FDD\u7559\u539F\u8A2D\u5B9A\u3002" : "\u9593\u9694\u8ACB\u8F38\u5165\u81F3\u5C11 0.1 \u79D2\uFF0C\u6700\u591A\u4E09\u4F4D\u5C0F\u6578\uFF0C\u5DF2\u4FDD\u7559\u539F\u8A2D\u5B9A\u3002";
+            return;
+          }
+          this.el("walk-input-error").textContent = "";
+          this.settings[key] = value;
+          this.commit();
+        });
+      }
       this.on("loop-stage", "change", () => {
         this.settings.loopStageName = this.input("loop-stage").value.trim().slice(0, 120);
         this.commit();
       });
       this.on("loop-capture", "click", () => {
+        this.el("loop-status").hidden = false;
         const name = currentStageName();
         if (!name) {
           this.el("loop-status").textContent = "\u8ACB\u5148\u958B\u555F\u968A\u9577\u95DC\u5361\u9078\u55AE\uFF0C\u6216\u5728\u6230\u9B25\u4E2D\u8B80\u53D6\u76EE\u524D\u95DC\u5361\u3002";
@@ -986,7 +1029,7 @@
         this.commit();
         this.el("loop-status").textContent = `\u5DF2\u8A2D\u5B9A\u300C${name}\u300D`;
       });
-      this.on("loop-toggle", "click", () => actions.loop(!this.loopState?.enabled));
+      this.on("loop-toggle", "change", () => actions.loop(this.input("loop-toggle").checked));
       this.on("manage", "click", () => {
         const editor = this.el("profile-editor");
         editor.hidden = !editor.hidden;
@@ -1031,11 +1074,11 @@
         if (this.addName(this.input("card-name").value)) this.input("card-name").value = "";
       });
       this.on("fallback", "change", () => {
-        this.settings.fallback = this.select("fallback").value === "rarity" ? "rarity" : "pause";
+        this.settings.fallback = this.input("fallback").checked ? "rarity" : "pause";
         this.commit();
       });
       this.on("chest-fallback", "change", () => {
-        this.settings.chestFallback = this.select("chest-fallback").value === "rarity" ? "rarity" : "pause";
+        this.settings.chestFallback = this.input("chest-fallback").checked ? "rarity" : "pause";
         this.commit();
       });
       this.on("chest-replace", "change", () => {
@@ -1077,10 +1120,10 @@
     currentKey = "";
     logKey = "";
     dragged = -1;
-    expanded = false;
     editingKind = "levelup";
     lastRoundKind = "";
     loopState = null;
+    walking = false;
     stagesKey = "";
     el(id) {
       return this.shadow.getElementById(id);
@@ -1104,9 +1147,10 @@
       this.el("message").textContent = message;
     }
     show(expanded = true) {
-      this.expanded = expanded;
-      this.el("panel").hidden = !expanded;
+      const panel = this.el("panel");
+      panel.hidden = !expanded;
       this.el("launcher").hidden = expanded;
+      if (expanded) panel.scrollTop = 0;
     }
     commit() {
       this.renderSettings();
@@ -1154,8 +1198,10 @@
         select.append(option);
       }
       select.value = this.settings.activeProfileId;
-      this.select("fallback").value = this.settings.fallback;
-      this.select("chest-fallback").value = this.settings.chestFallback;
+      this.input("fallback").checked = this.settings.fallback === "rarity";
+      this.input("chest-fallback").checked = this.settings.chestFallback === "rarity";
+      if (this.shadow.activeElement !== this.input("walk-radius")) this.input("walk-radius").value = String(this.settings.walkRadius);
+      if (this.shadow.activeElement !== this.input("walk-interval")) this.input("walk-interval").value = String(this.settings.walkIntervalMs / 1e3);
       this.input("chest-replace").checked = this.settings.chestAutoReplace;
       this.input("auto-reroll").checked = this.settings.autoReroll;
       this.input("chest-auto-reroll").checked = this.settings.chestAutoReroll;
@@ -1168,7 +1214,7 @@
       if (this.shadow.activeElement !== this.input("loop-stage")) this.input("loop-stage").value = this.settings.loopStageName;
       for (const kind of ["levelup", "chest"]) this.el(`kind-${kind}`).setAttribute("aria-pressed", String(kind === this.editingKind));
       this.el("priority-help").textContent = this.editingKind === "chest" ? "\u6E05\u55AE\u5167\u5148\u9078\u54C1\u8CEA\u6700\u9AD8\u7684\u9053\u5177\uFF0C\u54C1\u8CEA\u76F8\u540C\u624D\u4F9D\u9806\u4F4D\u3002\u62D6\u66F3\u6216\u4F7F\u7528 \u2191 \u2193 \u6392\u5E8F\u3002" : this.settings.preferNewSkills ? "\u6E05\u55AE\u5167\u6A58\u8272\u512A\u5148 \u2192 \u5C1A\u672A\u53D6\u5F97 \u2192 \u539F\u9806\u4F4D\u3002\u540C\u985E\u5019\u9078\u7531\u4E0A\u5230\u4E0B\u512A\u5148\u3002" : "\u7531\u4E0A\u5230\u4E0B\u4F9D\u5E8F\u512A\u5148\u3002\u62D6\u66F3\u6216\u4F7F\u7528 \u2191 \u2193 \u6392\u5E8F\u3002";
-      this.el("empty-priorities").textContent = this.editingKind === "chest" ? "\u5C1A\u672A\u8A2D\u5B9A\u5BF6\u7BB1\u9806\u4F4D\u3002\u53EF\u5F9E\u76EE\u524D\u5BF6\u7BB1\u52A0\u5165\uFF0C\u6216\u5728\u9078\u724C\u8A2D\u5B9A\u6539\u7528\u6700\u9AD8\u7A00\u6709\u5EA6\u3002" : "\u9084\u6C92\u6709\u512A\u5148\u6280\u80FD\u3002\u8F38\u5165\u904A\u6232\u986F\u793A\u7684\u540D\u7A31\uFF0C\u6216\u5F9E\u4E0B\u65B9\u76EE\u524D\u9078\u724C\u52A0\u5165\u3002";
+      this.el("empty-priorities").textContent = this.editingKind === "chest" ? "\u5C1A\u672A\u8A2D\u5B9A\u5BF6\u7BB1\u9806\u4F4D\u3002\u53EF\u5F9E\u76EE\u524D\u5BF6\u7BB1\u52A0\u5165\uFF0C\u6216\u5728\u4E0A\u65B9\u52FE\u9078\u300C\u5BF6\u7BB1\u672A\u547D\u4E2D\u9078\u6700\u9AD8\u7A00\u6709\u5EA6\u300D\u3002" : "\u9084\u6C92\u6709\u512A\u5148\u6280\u80FD\u3002\u8F38\u5165\u904A\u6232\u986F\u793A\u7684\u540D\u7A31\uFF0C\u6216\u5F9E\u4E0B\u65B9\u76EE\u524D\u9078\u724C\u52A0\u5165\u3002";
       const names = this.names();
       this.el("empty-priorities").hidden = names.length > 0;
       const list = this.el("priorities");
@@ -1256,20 +1302,20 @@
       const kind = state.snapshot?.kind;
       if (kind !== this.lastRoundKind) {
         this.lastRoundKind = kind ?? "";
-        if ((kind === "levelup" || kind === "chest") && this.editingKind !== kind && this.shadow.activeElement?.tagName !== "INPUT") {
+        if ((kind === "levelup" || kind === "chest") && this.editingKind !== kind && !this.shadow.activeElement?.matches("input:not([type=checkbox])")) {
           this.editingKind = kind;
           this.renderSettings();
           return;
         }
       }
       this.el("status").textContent = state.status;
-      this.el("mode").textContent = state.enabled ? "AUTO / \u81EA\u52D5\u9078\u724C" : "PREVIEW / \u9810\u89BD";
-      this.el("mode").classList.toggle("on", state.enabled);
-      this.el("toggle").textContent = state.enabled ? "\u66AB\u505C\u81EA\u52D5\u9078\u724C" : "\u555F\u7528\u81EA\u52D5\u9078\u724C";
-      if (this.loopState?.enabled) this.el("toggle").textContent = "\u5168\u90E8\u66AB\u505C";
-      this.el("toggle").classList.toggle("pause", state.enabled);
-      this.el("launcher").classList.toggle("active", state.enabled);
-      this.el("launcher").textContent = this.loopState?.enabled ? "\u9078\u724C\u52A9\u624B \xB7 \u5FAA\u74B0\u4E2D" : state.enabled ? "\u9078\u724C\u52A9\u624B \xB7 \u81EA\u52D5" : "\u2667 \u9078\u724C\u52A9\u624B";
+      const running = state.enabled || this.walking || !!this.loopState?.enabled;
+      this.el("mode").textContent = running ? "AUTO / \u81EA\u52D5\u57F7\u884C\u4E2D" : "PREVIEW / \u9810\u89BD";
+      this.el("mode").classList.toggle("on", running);
+      this.input("toggle").checked = state.enabled;
+      this.el("pause-all").disabled = !running;
+      this.el("launcher").classList.toggle("active", state.enabled || this.walking);
+      this.el("launcher").textContent = this.loopState?.enabled ? "\u9078\u724C\u52A9\u624B \xB7 \u5FAA\u74B0\u4E2D" : this.walking ? "\u9078\u724C\u52A9\u624B \xB7 \u8D70\u52D5\u4E2D" : state.enabled ? "\u9078\u724C\u52A9\u624B \xB7 \u81EA\u52D5" : "\u2667 \u9078\u724C\u52A9\u624B";
       this.el("timer").textContent = state.snapshot?.timer ? `${state.snapshot.timer} \xB7 \u904A\u6232\u5012\u6578\u4ECD\u6703\u7E7C\u7E8C\uFF0C\u903E\u6642\u53EF\u80FD\u81EA\u884C\u9078\u724C\u3002` : "";
       const key = JSON.stringify([state.snapshot?.signature, state.snapshot?.closing, state.recommendation, this.profile().priorities, this.profile().chestPriorities]);
       if (key !== this.currentKey) {
@@ -1336,10 +1382,17 @@
         }
       }
     }
+    updateWalk(enabled, status) {
+      this.walking = enabled;
+      this.input("walk-toggle").checked = enabled;
+      this.el("walk-status").hidden = false;
+      this.el("walk-status").textContent = status;
+      if (this.state) this.update(this.state);
+    }
     updateLoop(state) {
       this.loopState = state;
-      this.el("loop-toggle").textContent = state.enabled ? "\u66AB\u505C\u5FAA\u74B0\u8207\u9078\u724C" : "\u555F\u7528\u5FAA\u74B0\u5237\u95DC";
-      this.el("loop-toggle").classList.toggle("pause", state.enabled);
+      this.input("loop-toggle").checked = state.enabled;
+      this.el("loop-status").hidden = state.status === "\u5FAA\u74B0\u5C1A\u672A\u555F\u7528";
       this.el("loop-status").textContent = state.status;
       this.el("loop-count").textContent = `\u672C\u5206\u9801\u5DF2\u7D50\u7B97 ${state.completed} \u5834`;
       const logs = this.el("loop-logs");
@@ -1573,13 +1626,268 @@
     }
   };
 
+  // src/walk.ts
+  var directions = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
+  var opposite = { ArrowLeft: "ArrowRight", ArrowRight: "ArrowLeft", ArrowUp: "ArrowDown", ArrowDown: "ArrowUp" };
+  var distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  var manualPauseMs = 1e4;
+  var editingSelector = 'input:not([type="checkbox"]), textarea, select, [contenteditable]:not([contenteditable="false"])';
+  function minimapPosition() {
+    const coords = document.getElementById("minimap-coords");
+    const area = document.getElementById("minimap-name")?.textContent?.trim();
+    const match = coords?.textContent?.trim().match(/^\(\s*(-?\d+)\s*,\s*(-?\d+)\s*\)$/);
+    if (!area || !match || !visible(coords)) return null;
+    return { point: { x: Number(match[1]), y: Number(match[2]) }, area };
+  }
+  var LocalWalk = class {
+    constructor(settings, changed) {
+      this.settings = settings;
+      this.changed = changed;
+      window.addEventListener("keydown", (event) => {
+        const key = event.key.toLowerCase();
+        const target = event.composedPath()[0];
+        if (target instanceof Element && target.matches(editingSelector)) return;
+        if (event.isTrusted && ["w", "a", "s", "d", "arrowleft", "arrowright", "arrowup", "arrowdown"].includes(key)) {
+          this.manualKeys.add(key);
+          this.manualInputChanged();
+        }
+      }, true);
+      window.addEventListener("keyup", (event) => {
+        if (event.isTrusted && this.manualKeys.delete(event.key.toLowerCase())) this.manualInputChanged();
+      }, true);
+      window.addEventListener("pointerdown", (event) => {
+        if (event.isTrusted && event.target instanceof Element && event.target.closest("#stage, #touch-ui")) {
+          this.manualPointers.add(event.pointerId);
+          this.manualInputChanged();
+        }
+      }, true);
+      const endPointer = (event) => {
+        if (event.isTrusted && this.manualPointers.delete(event.pointerId)) this.manualInputChanged();
+      };
+      window.addEventListener("pointerup", endPointer, true);
+      window.addEventListener("pointercancel", endPointer, true);
+      window.addEventListener("pointermove", (event) => {
+        if (event.buttons === 0) endPointer(event);
+      }, true);
+      const leavePage = () => {
+        if (this.manualHeld) {
+          this.manualKeys.clear();
+          this.manualPointers.clear();
+          this.manualInputChanged();
+        }
+        this.rest();
+      };
+      window.addEventListener("blur", leavePage);
+      window.addEventListener("pagehide", () => this.stop());
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) leavePage();
+      });
+    }
+    settings;
+    changed;
+    enabled = false;
+    status = "\u8D70\u52D5\u5C1A\u672A\u555F\u7528";
+    origin = null;
+    direction = "ArrowUp";
+    returning = false;
+    returnDirection = "ArrowDown";
+    targetDistance = 1;
+    previousStep = null;
+    lastDirection = "ArrowUp";
+    bestReturnDistance = Infinity;
+    stalled = 0;
+    nextStep = 0;
+    held = null;
+    releaseTimer;
+    watchFrame = 0;
+    interval;
+    manualKeys = /* @__PURE__ */ new Set();
+    manualPointers = /* @__PURE__ */ new Set();
+    resumeAt = null;
+    get manualHeld() {
+      return this.manualKeys.size > 0 || this.manualPointers.size > 0;
+    }
+    updateSettings(settings) {
+      if (settings.walkRadius !== this.settings.walkRadius || settings.walkIntervalMs !== this.settings.walkIntervalMs) {
+        this.settings = settings;
+        if (this.enabled) {
+          this.release();
+          this.nextStep = performance.now() + settings.walkIntervalMs;
+        }
+      } else this.settings = settings;
+    }
+    start() {
+      if (this.enabled) return;
+      if (this.manualHeld || readRunScreen().kind !== "battle" || this.blocked()) {
+        this.setStatus("\u8ACB\u5728\u6230\u9B25\u756B\u9762\u653E\u958B\u79FB\u52D5\u9375\u5F8C\u555F\u7528");
+        return;
+      }
+      this.origin = minimapPosition();
+      if (!this.origin) {
+        this.setStatus("\u8ACB\u5148\u5728\u6230\u9B25\u4E2D\u986F\u793A\u5C0F\u5730\u5716\u5EA7\u6A19");
+        return;
+      }
+      this.enabled = true;
+      this.newExcursion();
+      this.nextStep = performance.now() + this.settings.walkIntervalMs;
+      this.setStatus("\u5DF2\u8A18\u4F4F\u8D77\u9EDE\uFF0C\u7B49\u5F85\u4E0B\u4E00\u6B65");
+      this.interval = setInterval(() => this.tick(), 80);
+    }
+    stop(message = "\u8D70\u52D5\u5DF2\u505C\u6B62") {
+      this.release();
+      clearInterval(this.interval);
+      this.origin = null;
+      this.resumeAt = null;
+      this.enabled = false;
+      this.setStatus(message);
+    }
+    setStatus(message) {
+      if (this.status !== message) {
+        this.status = message;
+        this.changed();
+      }
+    }
+    manualInputChanged() {
+      if (!this.enabled) return;
+      this.release();
+      this.resumeAt = performance.now() + manualPauseMs;
+    }
+    blocked() {
+      const focus = document.activeElement;
+      return document.visibilityState !== "visible" || !document.hasFocus() || !!focus?.matches(editingSelector) || visible(document.getElementById("picker")) || visible(document.getElementById("party-wait"));
+    }
+    release() {
+      clearTimeout(this.releaseTimer);
+      cancelAnimationFrame(this.watchFrame);
+      if (this.held) window.dispatchEvent(new KeyboardEvent("keyup", { key: this.held, code: this.held, bubbles: true }));
+      this.held = null;
+    }
+    rest(message = "\u8D70\u52D5\u66AB\u505C \xB7 \u8FD4\u56DE\u6230\u9B25\u5F8C\u7E7C\u7E8C") {
+      if (!this.enabled) return;
+      this.release();
+      this.nextStep = performance.now() + this.settings.walkIntervalMs;
+      this.setStatus(message);
+    }
+    newExcursion(avoid) {
+      const choices = directions.filter((direction) => direction !== avoid);
+      this.direction = choices[Math.floor(Math.random() * choices.length)];
+      this.returnDirection = opposite[this.direction];
+      this.targetDistance = 1 + Math.floor(Math.random() * (this.settings.walkRadius - 1));
+      this.returning = false;
+      this.previousStep = null;
+      this.stalled = 0;
+      this.bestReturnDistance = Infinity;
+    }
+    tick() {
+      if (!this.origin) return;
+      const screen = readRunScreen();
+      if (["settlement", "lobby", "stages", "loading"].includes(screen.kind)) {
+        this.stop("\u5DF2\u96E2\u958B\u6230\u9B25\uFF0C\u8D70\u52D5\u5DF2\u505C\u6B62");
+        return;
+      }
+      if (screen.kind !== "battle" || this.blocked()) {
+        this.rest();
+        return;
+      }
+      const pos = minimapPosition();
+      if (!pos) {
+        this.rest("\u8D70\u52D5\u66AB\u505C \xB7 \u7B49\u5F85\u5C0F\u5730\u5716\u5EA7\u6A19");
+        return;
+      }
+      if (pos.area !== this.origin.area) {
+        this.stop("\u5DF2\u96E2\u958B\u539F\u5340\u57DF\uFF0C\u8D70\u52D5\u5DF2\u505C\u6B62");
+        return;
+      }
+      if (this.resumeAt !== null) {
+        if (this.manualHeld) {
+          this.setStatus("\u624B\u52D5\u79FB\u52D5\u4E2D \xB7 \u653E\u958B\u5F8C 10 \u79D2\u6062\u5FA9\u8D70\u52D5");
+          return;
+        }
+        const remaining = this.resumeAt - performance.now();
+        if (remaining > 0) {
+          this.setStatus(`\u624B\u52D5\u79FB\u52D5\u5DF2\u7D50\u675F \xB7 ${Math.ceil(remaining / 1e3)} \u79D2\u5F8C\u6062\u5FA9\u8D70\u52D5`);
+          return;
+        }
+        this.origin = pos;
+        this.newExcursion();
+        this.nextStep = 0;
+        this.resumeAt = null;
+      }
+      const away = distance(this.origin.point, pos.point);
+      if (away > this.settings.walkRadius) {
+        const previous = this.previousStep;
+        this.release();
+        if (!previous || distance(this.origin.point, previous) > this.settings.walkRadius || distance(previous, pos.point) > Math.SQRT2) {
+          this.rest("\u8D70\u52D5\u66AB\u505C \xB7 \u8D85\u51FA\u6D3B\u52D5\u534A\u5F91\uFF0C\u7B49\u5F85\u56DE\u5230\u7BC4\u570D\u5167");
+          return;
+        }
+        this.returning = true;
+        this.returnDirection = opposite[this.lastDirection];
+        this.bestReturnDistance = away;
+      }
+      if (performance.now() < this.nextStep) return;
+      if (this.returning && away === 0) this.newExcursion();
+      else if (!this.returning && away >= this.targetDistance) {
+        this.returning = true;
+        this.bestReturnDistance = away;
+        this.stalled = 0;
+      } else if (this.previousStep && away <= this.settings.walkRadius) {
+        if (this.returning && this.settings.walkRadius - away < 1 && away > distance(this.origin.point, this.previousStep)) {
+          this.returnDirection = opposite[this.lastDirection];
+        }
+        const progressed = this.returning ? away < this.bestReturnDistance : distance(this.previousStep, pos.point) > 0;
+        this.stalled = progressed ? 0 : this.stalled + 1;
+        if (this.returning) this.bestReturnDistance = Math.min(this.bestReturnDistance, away);
+        if (this.stalled >= 4) {
+          this.retryBlockedStep(away);
+          return;
+        }
+      }
+      this.previousStep = pos.point;
+      this.nextStep = performance.now() + this.settings.walkIntervalMs;
+      this.takeStep(this.returning ? this.returnDirection : this.direction, pos);
+      this.setStatus(`${this.returning ? "\u5F80\u8D77\u9EDE\u8D70" : "\u5C0F\u6B65\u8D70\u52D5\u4E2D"} \xB7 \u8D77\u9EDE (${this.origin.point.x}, ${this.origin.point.y})`);
+    }
+    retryBlockedStep(away) {
+      if (away === 0) this.newExcursion(this.direction);
+      else {
+        if (this.returning && this.settings.walkRadius - away >= 1) {
+          const turns = directions.filter((key) => key !== this.returnDirection && key !== this.direction);
+          this.returnDirection = turns[Math.floor(Math.random() * turns.length)];
+        } else this.returnDirection = opposite[this.direction];
+        this.returning = true;
+        this.previousStep = null;
+        this.stalled = 0;
+        this.bestReturnDistance = away;
+      }
+      this.nextStep = performance.now() + Math.max(1e3, this.settings.walkIntervalMs);
+      this.setStatus("\u8D70\u52D5\u53D7\u963B \xB7 \u7A0D\u5F8C\u91CD\u8A66");
+    }
+    takeStep(key, pos) {
+      this.release();
+      this.held = key;
+      this.lastDirection = key;
+      this.releaseTimer = setTimeout(() => this.release(), 100);
+      const watch = () => {
+        if (!this.held) return;
+        const latest = minimapPosition();
+        if (!latest || latest.area !== pos.area || distance(pos.point, latest.point) >= 1 || this.blocked()) this.release();
+        else this.watchFrame = requestAnimationFrame(watch);
+      };
+      this.watchFrame = requestAnimationFrame(watch);
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: this.held, code: this.held, bubbles: true }));
+    }
+  };
+
   // src/content.ts
   async function main() {
     if (document.getElementById("ro-picker-assistant")) return;
     const settings = await loadSettings();
     const engine = new PickerEngine(settings);
     const loop = new RunLoop(settings.loopStageName);
+    const walk = new LocalWalk(settings, () => panel.updateWalk(walk.enabled, walk.status));
     const pauseAll = () => {
+      if (walk.enabled) walk.stop();
       if (loop.state.enabled) loop.stop();
       if (engine.state.enabled) engine.setEnabled(false);
     };
@@ -1587,18 +1895,22 @@
     const panel = new Panel(structuredClone(settings), {
       save(next) {
         engine.updateSettings(next);
+        walk.updateSettings(next);
         loop.updateStage(next.loopStageName);
         pendingSave = pendingSave.then(() => saveSettings(next)).catch(() => {
+          if (walk.enabled) walk.stop("\u8A2D\u5B9A\u5132\u5B58\u5931\u6557\uFF0C\u8D70\u52D5\u5DF2\u505C\u6B62");
           engine.pauseWithError("\u8A2D\u5B9A\u5132\u5B58\u5931\u6557\uFF0C\u5DF2\u66AB\u505C\u3002\u8ACB\u91CD\u65B0\u6574\u7406\u904A\u6232\u5F8C\u518D\u8A66\u3002");
           if (loop.state.enabled) loop.stop("\u8A2D\u5B9A\u5132\u5B58\u5931\u6557\uFF0C\u5FAA\u74B0\u5DF2\u66AB\u505C");
           panel.message("\u8A2D\u5B9A\u672A\u5132\u5B58\uFF0C\u8ACB\u91CD\u65B0\u6574\u7406\u5F8C\u78BA\u8A8D\u6E05\u55AE\u3002");
         });
       },
-      enable: (enabled) => enabled ? engine.setEnabled(true) : pauseAll(),
+      pauseAll,
+      enable: (enabled) => engine.setEnabled(enabled),
+      walk: (enabled) => enabled ? walk.start() : walk.stop(),
       clearLogs: () => engine.clearLogs(),
       loop(enabled) {
         if (!enabled) {
-          pauseAll();
+          loop.stop();
           return;
         }
         loop.start();
@@ -1630,6 +1942,7 @@
       if (area === "local" && changes[STORAGE_KEY]) {
         const next = sanitizeSettings(changes[STORAGE_KEY].newValue);
         engine.updateSettings(next);
+        walk.updateSettings(next);
         loop.updateStage(next.loopStageName);
         panel.setSettings(next);
       }
@@ -1638,8 +1951,10 @@
       if (message?.type === "RO_PICKER_SHOW") {
         panel.show();
         respond({ ok: true });
-      } else if (message?.type === "RO_PICKER_STATUS") respond({ enabled: engine.state.enabled || loop.state.enabled, status: loop.state.enabled ? `${loop.state.status} \xB7 \u5DF2\u7D50\u7B97 ${loop.state.completed} \u5834` : engine.state.status });
-      else if (message?.type === "RO_PICKER_PAUSE") {
+      } else if (message?.type === "RO_PICKER_STATUS") {
+        const status = loop.state.enabled ? `${loop.state.status} \xB7 \u5DF2\u7D50\u7B97 ${loop.state.completed} \u5834` : engine.state.status;
+        respond({ enabled: engine.state.enabled || loop.state.enabled || walk.enabled, status: walk.enabled ? `${status} \xB7 ${walk.status}` : status });
+      } else if (message?.type === "RO_PICKER_PAUSE") {
         pauseAll();
         respond({ ok: true });
       }

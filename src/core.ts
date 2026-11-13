@@ -2,6 +2,12 @@ import type { Card, Decision, ItemRules, PerkPlan, PickKind, Profile, Settings, 
 import { defaultRollRules, rollCategoryKeys } from './roll-rules';
 
 export const STORAGE_KEY = 'roPickerSettings';
+export const minWalkIntervalMs = 100;
+export type WalkSetting = 'walkRadius' | 'walkIntervalMs';
+export function validWalkSetting(key: WalkSetting, value: unknown): value is number {
+  const minimum = key === 'walkRadius' ? 1 : minWalkIntervalMs;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum;
+}
 export const normalizeName = (value: string): string => value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase();
 export const emptyProfile = (id: string, name: string): Profile => ({
   id, name, priorities: [], chestPriorities: [],
@@ -14,6 +20,7 @@ export const defaults = (): Settings => ({
   chestFallback: 'pause', chestAutoReplace: true,
   autoReroll: true, chestAutoReroll: true,
   loopStageName: '',
+  walkRadius: 3, walkIntervalMs: 2000,
   preferNewSkills: true, autoCollectLoot: true,
   autoRollLoot: true, rollRules: defaultRollRules(),
 });
@@ -60,6 +67,8 @@ export function sanitizeSettings(raw: unknown): Settings {
   base.autoReroll = data.autoReroll !== false;
   base.chestAutoReroll = data.chestAutoReroll !== false;
   base.loopStageName = typeof data.loopStageName === 'string' ? data.loopStageName.trim().slice(0, 120) : '';
+  if (validWalkSetting('walkRadius', data.walkRadius)) base.walkRadius = data.walkRadius;
+  if (validWalkSetting('walkIntervalMs', data.walkIntervalMs)) base.walkIntervalMs = data.walkIntervalMs;
   base.preferNewSkills = data.preferNewSkills !== false;
   base.autoCollectLoot = data.autoCollectLoot !== false;
   base.autoRollLoot = data.autoRollLoot !== false;

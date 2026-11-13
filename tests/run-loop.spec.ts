@@ -10,7 +10,7 @@ async function configure(page: Page, name = '斐揚森林'): Promise<void> {
   await page.getByLabel('循環關卡', { exact: true }).fill(name);
   await page.getByLabel('循環關卡', { exact: true }).blur();
 }
-async function start(page: Page): Promise<void> { await page.getByRole('button', { name: '啟用循環刷關', exact: true }).click(); }
+async function start(page: Page): Promise<void> { await page.getByRole('checkbox', { name: '循環刷關', exact: true }).click(); }
 async function actions(page: Page): Promise<string[]> { return page.evaluate(() => (window as any).runFixture.actions); }
 
 test('repeats two settlements, captain conversations and configurable expeditions while picking cards', async ({ page }, info) => {
@@ -84,7 +84,7 @@ test('global pause cancels the pending settlement return and both automations', 
 test('pausing during difficulty prevents departure confirmation', async ({ page }) => {
   await configure(page); await page.evaluate(() => { (window as any).runFixture.selected = '斐揚森林'; (window as any).runFixture.openStages(); }); await start(page);
   await expect(page.locator('#npc-dialog')).toBeVisible();
-  await page.getByRole('button', { name: '暫停循環與選牌', exact: true }).click();
+  await page.getByRole('checkbox', { name: '循環刷關', exact: true }).uncheck();
   await page.waitForTimeout(1300);
   expect(await actions(page)).toEqual(['depart:斐揚森林']);
 });

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "RO 選牌助手",
-  "version": "0.6.0",
-  "description": "依種類自動選擇組隊分寶的 Need 或 Greed。支援技能與寶箱自動選牌、專注、放逐、重抽及單人循環刷關。",
+  "version": "0.7.2",
+  "description": "依種類自動選擇組隊分寶的 Need 或 Greed。支援技能與寶箱自動選牌、專注、放逐、重抽、單人循環刷關與戰鬥中的小範圍走動。",
   "permissions": ["storage"],
   "action": {
     "default_title": "RO 選牌助手",

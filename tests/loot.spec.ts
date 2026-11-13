@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { test } from './browser-fixture';
 
 test.beforeEach(async ({ page }) => { await page.addScriptTag({ content: await readFile('tests/loot-fixture.js', 'utf8') }); });
-async function enable(page: Page): Promise<void> { await page.getByRole('button', { name: '啟用自動選牌', exact: true }).click(); }
+async function enable(page: Page): Promise<void> { await page.getByRole('checkbox', { name: '自動選牌', exact: true }).check(); }
 async function loot(page: Page, options: Record<string, unknown> = {}): Promise<void> { await page.evaluate(options => (window as any).showLoot(options), options); }
 async function taken(page: Page): Promise<string[]> { return page.evaluate(() => (window as any).lootTaken); }
 
@@ -20,19 +20,18 @@ test('loot previews, then gets consecutive identical equipment after the animati
 test('pausing and disabling automatic loot both cancel a queued card acquisition', async ({ page }) => {
   await enable(page); await loot(page, { name: '波利卡片', badge: '卡片' });
   await expect(page.locator('#status')).toContainText('即將取得');
-  await page.getByRole('button', { name: '暫停自動選牌', exact: true }).click();
+  await page.getByRole('checkbox', { name: '自動選牌', exact: true }).uncheck();
   await page.waitForTimeout(1700); expect(await taken(page)).toEqual([]);
-  await page.locator('#advanced summary').click(); await page.locator('#auto-collect-loot').uncheck(); await enable(page);
+  await page.locator('#auto-collect-loot').uncheck(); await enable(page);
   await page.waitForTimeout(1700); expect(await taken(page)).toEqual([]);
   await page.locator('#auto-collect-loot').check();
   await expect.poll(() => taken(page)).toEqual(['波利卡片']);
-  await page.reload(); await page.getByRole('button', { name: '開啟 RO 選牌助手' }).click(); await page.locator('#advanced summary').click();
+  await page.reload(); await page.getByRole('button', { name: '開啟 RO 選牌助手' }).click();
   await expect(page.locator('#auto-collect-loot')).toBeChecked();
 });
 
 test('takes eggs, unknown and unlabelled loot, and loot won in a roll using the same setting', async ({ page }) => {
-  await page.locator('#advanced summary').click();
-  const collect = page.getByRole('checkbox', { name: '撿到任何物品時自動點「取得」' });
+  const collect = page.getByRole('checkbox', { name: '自動取得掉落物' });
   await collect.uncheck(); await enable(page);
   const won = { name: '短劍', result: true };
   const unlabelled = { name: '', badge: '', next: won };
@@ -89,20 +88,19 @@ test('edits, opt-out and reload apply saved rules separately from acquiring equi
   await expect(page.getByLabel('武器', { exact: true })).toHaveValue('need');
   await page.getByLabel('武器', { exact: true }).selectOption('greed');
   await page.getByLabel('卡片', { exact: true }).selectOption('need');
-  await page.getByLabel('依種類自動擲骰').uncheck();
+  await page.getByLabel('組隊自動擲骰').uncheck();
   await page.reload();
   await page.addScriptTag({ content: await readFile('tests/loot-fixture.js', 'utf8') });
   await page.getByRole('button', { name: '開啟 RO 選牌助手' }).click();
   await page.getByText('組隊分寶', { exact: true }).click();
-  await expect(page.getByLabel('依種類自動擲骰')).not.toBeChecked();
+  await expect(page.getByLabel('組隊自動擲骰')).not.toBeChecked();
   await expect(page.getByLabel('武器', { exact: true })).toHaveValue('greed');
   await enable(page);
   await loot(page, { roll: true, next: { roll: true, artwork: 'assets/cards/4001.png', badge: '卡片' } });
   await page.waitForTimeout(1800);
   expect(await rollChoices(page)).toEqual([]);
-  await page.locator('#advanced summary').click();
   await page.locator('#auto-collect-loot').uncheck();
-  await page.getByLabel('依種類自動擲骰').check();
+  await page.getByLabel('組隊自動擲骰').check();
   await expect.poll(() => rollChoices(page), { timeout: 6500 }).toEqual(['greed', 'need']);
 });
 
@@ -134,7 +132,7 @@ test('a pending roll honors a changed choice and pause before clicking', async (
   await expect(page.locator('#status')).toContainText('武器）選 Need');
   await page.getByLabel('武器', { exact: true }).selectOption('greed');
   await expect(page.locator('#status')).toContainText('武器）選 Greed');
-  await page.getByRole('button', { name: '暫停自動選牌', exact: true }).click();
+  await page.getByRole('checkbox', { name: '自動選牌', exact: true }).uncheck();
   await page.waitForTimeout(2200);
   expect(await rollChoices(page)).toEqual([]);
   await enable(page);

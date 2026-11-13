@@ -19,6 +19,8 @@ export interface Settings {
   autoReroll: boolean;
   chestAutoReroll: boolean;
   loopStageName: string;
+  walkRadius: number;
+  walkIntervalMs: number;
   preferNewSkills: boolean;
   autoCollectLoot: boolean;
   autoRollLoot: boolean;

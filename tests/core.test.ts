@@ -41,6 +41,17 @@ test('loop settings migrate without choosing a stage or persisting activation', 
   assert.equal(sanitizeSettings({ loopStageName: 'A'.repeat(200) }).loopStageName.length, 120);
 });
 
+test('walking accepts custom grid units and millisecond intervals and preserves old presets', () => {
+  for (const [walkRadius, walkIntervalMs] of [[1, 100], [7, 375], [5, 3000]]) {
+    const settings = sanitizeSettings({ walkRadius, walkIntervalMs });
+    assert.equal(settings.walkRadius, walkRadius);
+    assert.equal(settings.walkIntervalMs, walkIntervalMs);
+  }
+  const invalid = sanitizeSettings({ walkRadius: 2.5, walkIntervalMs: 0 });
+  assert.equal(invalid.walkRadius, defaults().walkRadius);
+  assert.equal(invalid.walkIntervalMs, defaults().walkIntervalMs);
+});
+
 test('new lists have no implicit rules and banish marks survive reordering', () => {
   const settings = defaults();
   for (const names of [[], ['A'], ['A', 'B']]) {
