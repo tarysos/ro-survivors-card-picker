@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "RO 選牌助手",
+  "version": "0.3.0",
+  "description": "依技能與寶箱優先順序自動選牌，支援專注、放逐、全部重抽與隨機選牌延遲。",
+  "permissions": ["storage"],
+  "action": {
+    "default_title": "RO 選牌助手",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [{
+    "matches": ["https://ro-survivors.com/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle"
+  }]
+}

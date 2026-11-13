@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><title>RO 選牌助手 · 測試場景</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 30% 25%,#25443b,#101d23 70%);color:#e6e6d6;font-family:system-ui,sans-serif;padding:46px}.hidden{display:none!important}.heading{font-size:12px;letter-spacing:4px;color:#a0bba8}.game-title{font-size:32px;letter-spacing:2px;margin:12px 0 6px}.caption{color:#8ba89c;font-size:13px}.ro-window{margin-top:50px;max-width:800px;padding:28px;background:#17242ddd;border:1px solid #566452;border-radius:16px;box-shadow:0 24px 70px #0005}#pk-title{font-size:24px;margin:0 0 6px}#pk-sub,#pk-gain,#lu-sockets{color:#b3c0b4;margin:8px 0;font-size:12px}#pk-cards{display:flex;gap:18px;margin:25px 0}.pk-slot{flex:1}.pk-card{width:100%;min-height:220px;display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:12px;padding:20px;border:1px solid #637666;background:linear-gradient(#283c40,#1b292f);color:#f5f2dd;border-radius:12px;cursor:pointer}.pk-key{color:#b0c1aa;font-size:12px}.pk-badge{font-size:11px;color:#d3c68d}.pk-name{font-size:18px}.pk-sub{color:#abc0b4;font-size:12px}.pk-lines{padding-left:16px;font-size:12px;color:#c3d1cb}.pk-slot.chosen .pk-card{border-color:#a4e8cb}.pk-act,#simulate{padding:8px;background:#34433d;color:#deded0;border:1px solid #617568;border-radius:5px}.pk-back{display:none}.asking .pk-back{display:block}#pk-timer{color:#f2ba74}.footnote{max-width:700px;margin-top:20px;color:#78958d;font-size:12px;line-height:1.8}
+/* Compact game layouts hide metadata without changing the picker type. */
+@media (max-height:500px) { #lu-sockets, #pk-gain { display:none; } }
+</style></head><body><div class="heading">EXTENSION TEST LAB</div><h1 class="game-title">RO 選牌助手</h1><div class="caption">本機模擬場景 · 用於驗證插件操作，不是實際遊戲畫面</div>
+<section id="picker" class="ro-window hidden"><h2 id="pk-title"></h2><div id="pk-sub"></div><div id="pk-gain"></div><div id="lu-sockets">技能 2 / 4</div><div id="pk-timer" class="hidden"></div><div id="pk-cards"></div><div id="pk-hint">選擇一張卡牌（1–3）</div><div id="pk-bar"></div></section>
+<p class="footnote">以獨立製作的 HTML 重現選牌元素與互動時序，測試進場等待、優先排序、手動接管與連續升級。未包含遊戲程式或美術資源。</p>
+<script>
+// A synthetic contract fixture. It does not include the game's code or assets.
+window.selections=[]; window.clickAttempts=[]; window.confirmAttempts=[]; window.keyEvents=[]; window.rerolls=0; window.perkAttempts=[];
+window.showRound=(options={})=>{
+ const root=document.getElementById('picker'); const cards=options.cards||[{name:'Fire Bolt',badge:'普通'},{name:'Cold Bolt',badge:'傳說'},{name:'Heal',badge:'優良'}];
+ const perks=options.perks;
+ if(perks){perks.focused??=[];perks.deckIndex??=0;}
+ const action=(kind,label,index=null)=>{
+  const button=document.createElement('button');button.className='pk-act';button.append(document.createTextNode(label));
+  const count=document.createElement('small');count.textContent=String(perks[kind]??0);button.append(count);
+  button.dataset.act=index===null?'bar:0':`${index}:${kind}`;
+  button.disabled=!(perks[kind]>0)||(kind==='focus'&&perks.focused.includes(cards[index].name));
+  button.onclick=()=>{
+   const name=index===null?null:cards[index].name;window.perkAttempts.push({kind,name});
+   if(options.rejectPerk===kind)return;
+   perks[kind]--;let nextCards=cards;
+   if(kind==='focus')perks.focused.push(name);
+   if(kind==='banish'){
+    nextCards=cards.flatMap((c,i)=>i!==index?[c]:options.banishReplacements?.[name]?[options.banishReplacements[name]]:[]);
+    if(!nextCards.length)nextCards=[{name:'Potion',badge:''}];
+   }
+   if(kind==='reroll')nextCards=options.rerollDecks?.[perks.deckIndex++]??cards;
+   window.showRound({...options,cards:nextCards});
+  };return button;
+ };
+ root.className='ro-window'; document.getElementById('pk-title').textContent=options.title||'升級！';
+ const gain=document.getElementById('pk-gain');gain.textContent=options.gain===false?'':'Lv 3: +3% 傷害 · +0.5% 生命';gain.classList.toggle('hidden',options.gain===false);
+ const sockets=document.getElementById('lu-sockets');sockets.classList.toggle('hidden',options.sockets===false);
+ const timer=document.getElementById('pk-timer');timer.textContent=options.timer?'請在 8 秒內選擇':'';timer.classList.toggle('hidden',!options.timer);
+ const holder=document.getElementById('pk-cards');holder.replaceChildren();const started=performance.now();let picked=false;
+ cards.forEach((data,i)=>{
+  const slot=document.createElement('div');slot.className='pk-slot';const card=document.createElement('button');card.className='pk-card';card.dataset.i=String(i);
+  for(const [cls,value] of [['pk-key',String(i+1)],['pk-badge',data.badge??'普通'],['pk-name',data.name],['pk-sub','Lv 2'],['pk-lines',data.details||'提升技能效果']]){const child=document.createElement('span');child.className=cls;child.textContent=value;card.append(child);}
+  if(data.fresh){const ribbon=document.createElement('span');ribbon.className='pk-ribbon';ribbon.textContent='全新';card.append(ribbon);}
+  const finish=()=>{if(picked||options.reject)return;picked=true;window.selections.push({index:i,name:data.name,elapsedMs:performance.now()-started});slot.classList.add('chosen');slot.classList.remove('asking','flip');root.classList.add('closing');setTimeout(()=>{root.classList.add('hidden');holder.replaceChildren();if(options.next)window.showRound(options.next);},options.closeMs??200);};
+  const choose=()=>{window.clickAttempts.push(i);if(picked||options.reject||performance.now()-started<(options.lockMs??380+cards.length*120))return;if(data.confirm){slot.classList.add('flip');setTimeout(()=>slot.classList.add('asking'),options.confirmDelay??160);return;}finish();};
+  card.onclick=choose;slot.append(card);
+  if(data.confirm){
+   const back=document.createElement('div');back.className='pk-back';back.textContent='替換原有道具？';
+   const yes=document.createElement('button');yes.dataset.yes='';yes.textContent='確認替換';yes.onclick=()=>{window.confirmAttempts.push(i);if(slot.classList.contains('asking')&&!options.rejectConfirmation)finish();};
+   const no=document.createElement('button');no.dataset.no='';no.textContent='不要替換';no.onclick=()=>slot.classList.remove('asking','flip');
+   back.append(yes,no);slot.append(back);
+  }
+  if(perks){const acts=document.createElement('div');acts.className='pk-acts';acts.append(action('focus',options.englishActions?'Focus':'專注',i),action('banish',options.englishActions?'Banish':'放逐',i));slot.append(acts);}
+  holder.append(slot);
+ });
+ const bar=document.getElementById('pk-bar');bar.replaceChildren();const reroll=document.createElement('button');reroll.className='pk-act';reroll.textContent='重抽';reroll.onclick=()=>{window.rerolls++;window.showRound(options.rerolled||{});};bar.append(reroll);
+ if(perks)bar.append(action('reroll',options.englishActions?'Reroll deck':'重抽全部'));
+};
+window.addEventListener('keydown',event=>{window.keyEvents.push(event.key);if(!document.getElementById('picker').classList.contains('hidden')&&/^[1-9]$/.test(event.key))document.querySelectorAll('.pk-card')[Number(event.key)-1]?.click();});
+</script></body></html>
