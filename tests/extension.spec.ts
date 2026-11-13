@@ -53,9 +53,9 @@ async function selections(page: Page): Promise<any[]> { return page.evaluate(() 
 async function enable(page: Page): Promise<void> { await page.getByRole('button', { name: '啟用自動選牌', exact: true }).click(); }
 async function perks(page: Page): Promise<any[]> { return page.evaluate(() => (window as any).perkAttempts); }
 
-test('skills focus the first priority, banish the last two, then select once on a compact screen', async ({ page }, info) => {
+test('skills focus the first priority, banish owned last-two upgrades, then select on a compact screen', async ({ page }, info) => {
   for (const name of ['A', 'B', 'C', 'D']) await add(page, name);
-  await expect(page.locator('#priorities .rule-tag')).toHaveText(['專注', '放逐', '放逐']);
+  await expect(page.locator('#priorities .rule-tag')).toHaveText(['專注', '取得後放逐', '取得後放逐']);
   await round(page, { cards: [{ name: 'C' }, { name: 'A' }, { name: 'D' }], perks: { focus: 2, banish: 2, reroll: 2 } });
   await expect(page.locator('#status')).toContainText('預覽：專注');
   await page.screenshot({ path: info.outputPath('perks-preview.png') });
@@ -67,6 +67,42 @@ test('skills focus the first priority, banish the last two, then select once on 
   expect(await page.evaluate(() => (window as any).clickAttempts)).toEqual([0]);
   await expect(page.locator('#logs')).toContainText('已專注「A」');
   await expect(page.locator('#logs')).toContainText('已放逐「D」');
+});
+
+test('last two skills are acquired first, banished on later upgrades, and acquired again in a new run', async ({ page }) => {
+  for (const name of ['A', 'B', 'C', 'D']) await add(page, name);
+  await page.setViewportSize({ width: 925, height: 390 });
+  await round(page, { cards: [{ name: 'D', badge: '技能', fresh: true }, { name: 'C', badge: '技能', fresh: true }], perks: { banish: 2, reroll: 2 } });
+  await expect(page.locator('#current')).toContainText('尚未取得');
+  await enable(page);
+  await expect.poll(async () => (await selections(page))[0]?.name).toBe('C');
+  expect(await perks(page)).toEqual([]);
+  await expect(page.locator('#picker')).toHaveClass(/hidden/);
+
+  await round(page, { cards: [{ name: 'C', badge: '普通' }, { name: 'D', badge: '技能', fresh: true }], perks: { banish: 2, reroll: 2 } });
+  await expect(page.locator('#current')).toContainText('已取得・升級牌');
+  await expect.poll(async () => (await selections(page))[1]?.name, { timeout: 6000 }).toBe('D');
+  expect(await perks(page)).toEqual([{ kind: 'banish', name: 'C' }]);
+  await expect(page.locator('#picker')).toHaveClass(/hidden/);
+
+  await round(page, { cards: [{ name: 'D', badge: '普通' }, { name: 'A', badge: '技能', fresh: true }], perks: { banish: 1, reroll: 2 } });
+  await expect.poll(async () => (await selections(page))[2]?.name, { timeout: 6000 }).toBe('A');
+  expect(await perks(page)).toEqual([{ kind: 'banish', name: 'C' }, { kind: 'banish', name: 'D' }]);
+  await expect(page.locator('#picker')).toHaveClass(/hidden/);
+
+  // A fresh card in a new run must not inherit earlier ownership or banishment.
+  await round(page, { cards: [{ name: 'C', badge: '技能', fresh: true }], perks: { banish: 2, reroll: 2 } });
+  await expect.poll(async () => (await selections(page))[3]?.name).toBe('C');
+  expect(await perks(page)).toHaveLength(2);
+});
+
+test('unknown skill state is not treated as owned solely because its new ribbon is absent', async ({ page }) => {
+  for (const name of ['A', 'C', 'D']) await add(page, name);
+  await round(page, { cards: [{ name: 'D', badge: '未知標籤' }], perks: { banish: 2, reroll: 2 } });
+  await expect(page.locator('#current')).toContainText('取得狀態未知');
+  await enable(page);
+  await expect.poll(async () => (await selections(page))[0]?.name).toBe('D');
+  expect(await perks(page)).toEqual([]);
 });
 
 test('skills reroll identical non-target decks until a target appears without clicking per-card reroll', async ({ page }) => {

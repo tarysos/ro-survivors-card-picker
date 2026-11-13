@@ -41,12 +41,18 @@ export function readSnapshot(): Snapshot | null {
     const badge = text(element, '.pk-badge');
     const name = text(element, '.pk-name');
     const fresh = kind === 'levelup' && !!element.querySelector('.pk-ribbon');
+    const rarity = readRarity(badge, fresh);
+    // The live skill picker renders new skills with a ribbon; owned-skill
+    // upgrades instead have a rarity badge. No session history is needed, so
+    // manual picks and new runs are handled from the current card presentation.
+    const skillState: Card['skillState'] = kind !== 'levelup' ? 'unknown'
+      : fresh ? 'new' : rarity !== null && rarity >= 0 ? 'owned' : 'unknown';
     const actions: Card['actions'] = {};
     for (const action of readActions(element.closest('.pk-slot')?.querySelector('.pk-acts') ?? null)) {
       if (action.kind === 'focus' || action.kind === 'banish') actions[action.kind] = action;
     }
     // The potion card has no badge. Its identity is localized; never guess its rarity.
-    return { name, badge, rarity: readRarity(badge, fresh), details: [text(element, '.pk-sub'), text(element, '.pk-lines')].filter(Boolean).join(' · '),
+    return { name, badge, rarity, skillState, details: [text(element, '.pk-sub'), text(element, '.pk-lines')].filter(Boolean).join(' · '),
       requiresConfirmation: !!element.closest('.pk-slot')?.querySelector('.pk-back'),
       confirmationText: element.closest('.pk-slot')?.querySelector('.pk-back')?.textContent?.trim() ?? '', element, actions };
   });
@@ -54,7 +60,7 @@ export function readSnapshot(): Snapshot | null {
   const actionSignature = (a: GameAction | null | undefined) => a ? [a.kind, a.left, a.enabled] : null;
   return {
     root, kind, title, cards, reroll,
-    signature: JSON.stringify([kind, title, text(root, '#pk-sub'), text(root, '#pk-gain'), actionSignature(reroll), cards.map(c => [c.name, c.badge, c.details, c.requiresConfirmation, c.confirmationText, actionSignature(c.actions.focus), actionSignature(c.actions.banish)])]),
+    signature: JSON.stringify([kind, title, text(root, '#pk-sub'), text(root, '#pk-gain'), actionSignature(reroll), cards.map(c => [c.name, c.badge, c.skillState, c.details, c.requiresConfirmation, c.confirmationText, actionSignature(c.actions.focus), actionSignature(c.actions.banish)])]),
     timer: visible(root.querySelector('#pk-timer')) ? text(root, '#pk-timer') : '',
     closing: root.classList.contains('closing') || !!root.querySelector('.pk-slot.chosen'),
     confirming: !!root.querySelector('.pk-slot.asking,.pk-slot.flip'),

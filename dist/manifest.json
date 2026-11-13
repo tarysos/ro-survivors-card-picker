@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "RO 選牌助手",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "依技能與寶箱優先順序自動選牌，支援專注、放逐、全部重抽與隨機選牌延遲。",
   "permissions": ["storage"],
   "action": {

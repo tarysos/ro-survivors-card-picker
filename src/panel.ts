@@ -27,7 +27,7 @@ export class Panel {
       <style>${styles}\n.panel,.launcher { pointer-events:auto; }</style>
       <button class="launcher" id="launcher" aria-label="開啟 RO 選牌助手">♧ 選牌助手</button>
       <section class="panel" id="panel" aria-label="RO 選牌助手" hidden>
-        <header><span class="logo" aria-hidden="true">♧</span><div><strong>RO 選牌助手</strong><small>你的清單，你的打法 · v0.3.0</small></div><button class="icon" id="collapse" aria-label="收合面板">−</button></header>
+        <header><span class="logo" aria-hidden="true">♧</span><div><strong>RO 選牌助手</strong><small>你的清單，你的打法 · v0.3.1</small></div><button class="icon" id="collapse" aria-label="收合面板">−</button></header>
         <div class="body">
           <div class="toolbar"><span class="mode" id="mode">PREVIEW / 預覽</span><button id="toggle" class="primary">啟用自動選牌</button></div>
           <p class="status" id="status" role="status" aria-live="polite"></p>
@@ -50,8 +50,8 @@ export class Panel {
           <div class="section"><span class="label">目前選牌</span><div id="current" class="current"><div class="empty">升級或寶箱選牌出現後，會在這裡顯示。</div></div></div>
           <details class="section" id="advanced"><summary>選牌設定</summary>
             <label class="checkbox-row"><input id="auto-focus" type="checkbox">技能第一順位自動專注</label>
-            <label class="checkbox-row"><input id="auto-banish" type="checkbox">技能最後兩順位自動放逐</label>
-            <p class="note">技能清單至少 3 項才啟用放逐，放逐對象不會被自動選取。專注、放逐有剩餘次數才會執行。</p>
+            <label class="checkbox-row"><input id="auto-banish" type="checkbox">技能最後兩順位：先取得，再放逐</label>
+            <p class="note">技能清單至少 3 項才啟用。最後兩順位尚未取得時仍依順位選入；已取得後，再出現升級牌才放逐、不繼續升級。專注、放逐有剩餘次數才會執行。</p>
             <label class="checkbox-row"><input id="auto-reroll" type="checkbox">技能沒有目標牌時全部重抽</label>
             <label class="checkbox-row"><input id="chest-auto-reroll" type="checkbox">寶箱沒有目標牌時全部重抽</label>
             <p class="note">有設定目標清單才會重抽。重抽次數用完後，依下方未命中規則處理。</p>
@@ -182,8 +182,8 @@ export class Panel {
       const label = document.createElement('span'); label.className = 'name'; label.textContent = name;
       item.append(rank, label);
       if (this.editingKind === 'levelup') {
-        const role = rules.focus === name ? '專注' : rules.banished.includes(name) ? '放逐' : '';
-        if (role) { const tag = document.createElement('span'); tag.className = `rule-tag ${role === '放逐' ? 'banish' : ''}`; tag.textContent = role; item.append(tag); }
+        const role = rules.focus === name ? '專注' : rules.banishAfterLearning.includes(name) ? '取得後放逐' : '';
+        if (role) { const tag = document.createElement('span'); tag.className = `rule-tag ${role === '取得後放逐' ? 'banish' : ''}`; tag.textContent = role; item.append(tag); }
       }
       for (const [symbol, title, target] of [['↑', '上移', index - 1], ['↓', '下移', index + 1], ['×', '移除', -1]] as const) {
         const button = document.createElement('button'); button.className = 'icon'; button.textContent = symbol;
@@ -242,7 +242,8 @@ export class Panel {
             : !card.name ? '無法讀取卡牌名稱' : `加入${cardKind === 'chest' ? '寶箱道具' : '升級技能'}清單`;
           add.addEventListener('click', () => { if (supported) this.addName(card.name, cardKind); });
           row.append(name, add); block.append(row);
-          const detail = document.createElement('small'); detail.textContent = [card.badge, card.details, card.requiresConfirmation ? '將替換原有道具' : ''].filter(Boolean).join(' · '); block.append(detail);
+          const skillStatus = cardKind !== 'levelup' ? '' : card.skillState === 'new' ? '尚未取得' : card.skillState === 'owned' ? '已取得・升級牌' : '取得狀態未知';
+          const detail = document.createElement('small'); detail.textContent = [skillStatus, card.badge, card.details, card.requiresConfirmation ? '將替換原有道具' : ''].filter(Boolean).join(' · '); block.append(detail);
           if (recommended) { const why = document.createElement('div'); why.className = 'reason'; why.textContent = `推薦 · ${state.recommendation.reason}`; block.append(why); }
           target.append(block);
         });

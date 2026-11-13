@@ -46,24 +46,26 @@ export function sanitizeSettings(raw: unknown): Settings {
   base.delayMaxMs = Math.max(lower, upper);
   return base;
 }
-export function decideSnapshot(snapshot: Pick<Snapshot, 'kind'> & { cards: Pick<Card, 'name' | 'rarity'>[] }, settings: Settings): Decision {
+function isBanishUpgrade(card: Pick<Card, 'name' | 'skillState'>, names: string[]): boolean {
+  return card.skillState === 'owned' && names.some(name => normalizeName(name) === normalizeName(card.name));
+}
+export function decideSnapshot(snapshot: Pick<Snapshot, 'kind'> & { cards: Pick<Card, 'name' | 'rarity' | 'skillState'>[] }, settings: Settings): Decision {
   const profile = settings.profiles.find(p => p.id === settings.activeProfileId)!;
   if (snapshot.kind === 'levelup') {
     const rules = skillRules(settings);
-    const banned = new Set(rules.banished.map(normalizeName));
-    const candidates = snapshot.cards.map((card, index) => ({ card, index })).filter(c => !banned.has(normalizeName(c.card.name)));
-    if (!candidates.length) return { index: null, reason: '目前只有放逐對象，請重抽或手動選擇' };
+    const candidates = snapshot.cards.map((card, index) => ({ card, index })).filter(c => !isBanishUpgrade(c.card, rules.banishAfterLearning));
+    if (!candidates.length) return { index: null, reason: '目前只有已取得技能的放逐對象，請重抽或手動選擇' };
     const result = decide(candidates.map(c => c.card), rules.targets, settings.fallback);
     return { ...result, index: result.index === null ? null : candidates[result.index].index };
   }
   if (snapshot.kind === 'chest') return decide(snapshot.cards.map(c => ({ ...c, name: priorityName(c.name, 'chest') })), profile.chestPriorities, settings.chestFallback);
   return { index: null, reason: '僅處理升級技能與寶箱道具選牌' };
 }
-export function skillRules(settings: Settings): { focus: string | null; banished: string[]; targets: string[] } {
+export function skillRules(settings: Settings): { focus: string | null; banishAfterLearning: string[]; targets: string[] } {
   const names = settings.profiles.find(p => p.id === settings.activeProfileId)!.priorities;
   // With fewer than three names, the first priority would overlap the last two.
-  const banished = settings.autoBanishLastTwo && names.length >= 3 ? names.slice(-2) : [];
-  return { focus: settings.autoFocusFirst ? names[0] ?? null : null, banished, targets: banished.length ? names.slice(0, -2) : names };
+  const banishAfterLearning = settings.autoBanishLastTwo && names.length >= 3 ? names.slice(-2) : [];
+  return { focus: settings.autoFocusFirst ? names[0] ?? null : null, banishAfterLearning, targets: names };
 }
 export function planPerk(snapshot: Pick<Snapshot, 'kind' | 'cards' | 'reroll'>, settings: Settings): PerkPlan | null {
   if (!snapshot.cards.length || (snapshot.kind !== 'levelup' && snapshot.kind !== 'chest')) return null;
@@ -73,14 +75,15 @@ export function planPerk(snapshot: Pick<Snapshot, 'kind' | 'cards' | 'reroll'>, 
   if (snapshot.kind === 'levelup') {
     const focusIndex = rules.focus ? snapshot.cards.findIndex(card => normalizeName(card.name) === normalizeName(rules.focus!) && usable(card.actions.focus ?? null)) : -1;
     if (focusIndex >= 0) return { kind: 'focus', cardIndex: focusIndex, action: snapshot.cards[focusIndex].actions.focus!, description: `專注「${snapshot.cards[focusIndex].name}」` };
-    for (const name of [...rules.banished].reverse()) {
-      const index = snapshot.cards.findIndex(card => normalizeName(card.name) === normalizeName(name) && usable(card.actions.banish ?? null));
+    for (const name of [...rules.banishAfterLearning].reverse()) {
+      const index = snapshot.cards.findIndex(card => isBanishUpgrade(card, [name]) && usable(card.actions.banish ?? null));
       if (index >= 0) return { kind: 'banish', cardIndex: index, action: snapshot.cards[index].actions.banish!, description: `放逐「${snapshot.cards[index].name}」` };
     }
   }
   const targets = snapshot.kind === 'levelup' ? rules.targets : profile.chestPriorities;
   const rerollEnabled = snapshot.kind === 'levelup' ? settings.autoReroll : settings.chestAutoReroll;
-  const matched = snapshot.cards.some(card => targets.some(name => normalizeName(name) === normalizeName(priorityName(card.name, snapshot.kind as PickKind))));
+  const matched = snapshot.cards.some(card => (snapshot.kind !== 'levelup' || !isBanishUpgrade(card, rules.banishAfterLearning))
+    && targets.some(name => normalizeName(name) === normalizeName(priorityName(card.name, snapshot.kind as PickKind))));
   if (rerollEnabled && targets.length > 0 && !matched && usable(snapshot.reroll)) return { kind: 'reroll', cardIndex: null, action: snapshot.reroll!, description: `全部重抽（剩餘 ${snapshot.reroll!.left} 次）` };
   return null;
 }

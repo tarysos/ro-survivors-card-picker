@@ -21,6 +21,7 @@ export interface Card {
   name: string;
   badge: string;
   rarity: number | null;
+  skillState: 'new' | 'owned' | 'unknown';
   details: string;
   requiresConfirmation: boolean;
   confirmationText: string;

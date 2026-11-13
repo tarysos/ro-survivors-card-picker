@@ -4,16 +4,16 @@ import { decide, decideSnapshot, defaults, minimumDelay, normalizeName, planPerk
 import type { Card, GameAction, PerkKind } from '../src/types';
 
 const action = (kind: PerkKind, left: number | null = 2, enabled = true): GameAction => ({ kind, left, enabled, element: {} as HTMLButtonElement });
-const perkCard = (name: string): Card => ({ name, rarity: 0, badge: '普通', details: '', requiresConfirmation: false, confirmationText: '', element: {} as HTMLButtonElement, actions: { focus: action('focus'), banish: action('banish') } });
+const perkCard = (name: string, skillState: Card['skillState'] = 'owned'): Card => ({ name, rarity: 0, skillState, badge: '普通', details: '', requiresConfirmation: false, confirmationText: '', element: {} as HTMLButtonElement, actions: { focus: action('focus'), banish: action('banish') } });
 
-test('skill rules protect the first priority and reserve the last two for banishment', () => {
+test('skill rules protect the first priority and banish only upgrades of the last two', () => {
   const settings = defaults();
   for (const names of [[], ['A'], ['A', 'B']]) {
     settings.profiles[0].priorities = names;
-    assert.deepEqual(skillRules(settings).banished, []);
+    assert.deepEqual(skillRules(settings).banishAfterLearning, []);
   }
   settings.profiles[0].priorities = ['A', 'B', 'C', 'D'];
-  assert.deepEqual(skillRules(settings), { focus: 'A', targets: ['A', 'B'], banished: ['C', 'D'] });
+  assert.deepEqual(skillRules(settings), { focus: 'A', targets: ['A', 'B', 'C', 'D'], banishAfterLearning: ['C', 'D'] });
   assert.equal(decideSnapshot({ kind: 'levelup', cards: [perkCard('D'), perkCard('B')] }, settings).index, 1);
   settings.fallback = 'rarity';
   assert.equal(decideSnapshot({ kind: 'levelup', cards: [perkCard('D'), perkCard('C')] }, settings).index, null);
@@ -23,7 +23,7 @@ test('skill rules protect the first priority and reserve the last two for banish
 
 test('perks run focus, lowest-priority banish, then selection; disabled or spent actions are skipped', () => {
   const settings = defaults(); settings.profiles[0].priorities = ['A', 'B', 'C', 'D'];
-  const cards = ['C', 'A', 'D'].map(perkCard);
+  const cards = ['C', 'A', 'D'].map(name => perkCard(name));
   const snapshot = { kind: 'levelup' as const, cards, reroll: action('reroll') };
   assert.equal(planPerk(snapshot, settings)?.kind, 'focus');
   assert.equal(planPerk(snapshot, settings)?.cardIndex, 1);
@@ -60,7 +60,7 @@ test('new perk defaults migrate existing lists and preserve explicit disabled sw
   assert.equal(migrated.autoFocusFirst, true); assert.equal(migrated.autoBanishLastTwo, true);
   assert.equal(migrated.autoReroll, true); assert.equal(migrated.chestAutoReroll, true);
   const disabled = sanitizeSettings({ ...migrated, autoFocusFirst: false, autoBanishLastTwo: false, autoReroll: false, chestAutoReroll: false });
-  assert.deepEqual(skillRules(disabled), { focus: null, banished: [], targets: ['A', 'B', 'C'] });
+  assert.deepEqual(skillRules(disabled), { focus: null, banishAfterLearning: [], targets: ['A', 'B', 'C'] });
   assert.equal(disabled.autoReroll, false); assert.equal(disabled.chestAutoReroll, false);
   assert.deepEqual(disabled.profiles[0].chestPriorities, ['Item']);
 });
@@ -69,6 +69,32 @@ test('priority outranks rarity; names match exactly after harmless whitespace/ca
   assert.equal(decide([{ name: 'Fire Bolt', rarity: 0 }, { name: 'Cold Bolt', rarity: 4 }], [' FIRE   BOLT ', 'Cold Bolt'], 'pause').index, 0);
   assert.equal(decide([{ name: 'Fire Bolt II', rarity: 4 }], ['Fire Bolt'], 'pause').index, null);
   assert.equal(normalizeName(' Ａ  B '), 'a b');
+});
+
+test('last two skills are picked at their original ranks before their upgrades can be banished', () => {
+  const settings = defaults(); settings.profiles[0].priorities = ['A', 'B', 'C', 'D'];
+  const snapshot = { kind: 'levelup' as const, cards: [perkCard('D', 'new'), perkCard('C', 'new')], reroll: action('reroll') };
+  assert.equal(planPerk(snapshot, settings), null);
+  assert.equal(decideSnapshot(snapshot, settings).index, 1);
+  assert.match(decideSnapshot(snapshot, settings).reason, /第 3 順位/);
+  snapshot.cards.unshift(perkCard('B'));
+  assert.equal(decideSnapshot(snapshot, settings).index, 0);
+  snapshot.cards.shift(); snapshot.cards[1].skillState = 'owned';
+  assert.equal(planPerk(snapshot, settings)?.kind, 'banish');
+  assert.equal(planPerk(snapshot, settings)?.cardIndex, 1);
+  assert.equal(decideSnapshot(snapshot, settings).index, 0);
+  snapshot.cards[1].actions.banish!.left = 0;
+  assert.equal(planPerk(snapshot, settings), null); // New D is a target; do not reroll it away.
+  snapshot.cards[0].skillState = 'owned'; snapshot.cards[0].actions.banish!.left = 0;
+  assert.equal(planPerk(snapshot, settings)?.kind, 'reroll');
+  assert.equal(decideSnapshot(snapshot, settings).index, null);
+});
+
+test('unknown ownership never authorizes banishment or exclusion from the priority list', () => {
+  const settings = defaults(); settings.profiles[0].priorities = ['A', 'C', 'D'];
+  const snapshot = { kind: 'levelup' as const, cards: [perkCard('D', 'unknown')], reroll: action('reroll') };
+  assert.equal(planPerk(snapshot, settings), null);
+  assert.equal(decideSnapshot(snapshot, settings).index, 0);
 });
 test('ties use rarity then visual order; unknown rarity stays below a recognized one', () => {
   const cards = [{ name: 'A', rarity: null }, { name: 'A', rarity: 3 }, { name: 'A', rarity: 3 }];
@@ -144,7 +170,7 @@ test('delay range validation and migration retain card settings and normalize re
 test('chest matching ignores only trailing refinement and uses its own priority/fallback', () => {
   const settings = defaults();
   settings.profiles[0].priorities = ['B']; settings.profiles[0].chestPriorities = ['A'];
-  const cards = [{ name: 'B', rarity: 4 }, { name: 'A +3', rarity: 0 }];
+  const cards = [{ name: 'B', rarity: 4, skillState: 'unknown' as const }, { name: 'A +3', rarity: 0, skillState: 'unknown' as const }];
   assert.equal(decideSnapshot({ kind: 'chest', cards }, settings).index, 1);
   assert.equal(decideSnapshot({ kind: 'levelup', cards }, settings).index, 0);
   assert.equal(priorityName('A +3', 'levelup'), 'A +3');

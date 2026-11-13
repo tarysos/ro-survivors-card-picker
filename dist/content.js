@@ -57,13 +57,15 @@
     base.delayMaxMs = Math.max(lower, upper);
     return base;
   }
+  function isBanishUpgrade(card, names) {
+    return card.skillState === "owned" && names.some((name) => normalizeName(name) === normalizeName(card.name));
+  }
   function decideSnapshot(snapshot, settings) {
     const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
     if (snapshot.kind === "levelup") {
       const rules = skillRules(settings);
-      const banned = new Set(rules.banished.map(normalizeName));
-      const candidates = snapshot.cards.map((card, index) => ({ card, index })).filter((c) => !banned.has(normalizeName(c.card.name)));
-      if (!candidates.length) return { index: null, reason: "\u76EE\u524D\u53EA\u6709\u653E\u9010\u5C0D\u8C61\uFF0C\u8ACB\u91CD\u62BD\u6216\u624B\u52D5\u9078\u64C7" };
+      const candidates = snapshot.cards.map((card, index) => ({ card, index })).filter((c) => !isBanishUpgrade(c.card, rules.banishAfterLearning));
+      if (!candidates.length) return { index: null, reason: "\u76EE\u524D\u53EA\u6709\u5DF2\u53D6\u5F97\u6280\u80FD\u7684\u653E\u9010\u5C0D\u8C61\uFF0C\u8ACB\u91CD\u62BD\u6216\u624B\u52D5\u9078\u64C7" };
       const result = decide(candidates.map((c) => c.card), rules.targets, settings.fallback);
       return { ...result, index: result.index === null ? null : candidates[result.index].index };
     }
@@ -72,8 +74,8 @@
   }
   function skillRules(settings) {
     const names = settings.profiles.find((p) => p.id === settings.activeProfileId).priorities;
-    const banished = settings.autoBanishLastTwo && names.length >= 3 ? names.slice(-2) : [];
-    return { focus: settings.autoFocusFirst ? names[0] ?? null : null, banished, targets: banished.length ? names.slice(0, -2) : names };
+    const banishAfterLearning = settings.autoBanishLastTwo && names.length >= 3 ? names.slice(-2) : [];
+    return { focus: settings.autoFocusFirst ? names[0] ?? null : null, banishAfterLearning, targets: names };
   }
   function planPerk(snapshot, settings) {
     if (!snapshot.cards.length || snapshot.kind !== "levelup" && snapshot.kind !== "chest") return null;
@@ -83,14 +85,14 @@
     if (snapshot.kind === "levelup") {
       const focusIndex = rules.focus ? snapshot.cards.findIndex((card) => normalizeName(card.name) === normalizeName(rules.focus) && usable(card.actions.focus ?? null)) : -1;
       if (focusIndex >= 0) return { kind: "focus", cardIndex: focusIndex, action: snapshot.cards[focusIndex].actions.focus, description: `\u5C08\u6CE8\u300C${snapshot.cards[focusIndex].name}\u300D` };
-      for (const name of [...rules.banished].reverse()) {
-        const index = snapshot.cards.findIndex((card) => normalizeName(card.name) === normalizeName(name) && usable(card.actions.banish ?? null));
+      for (const name of [...rules.banishAfterLearning].reverse()) {
+        const index = snapshot.cards.findIndex((card) => isBanishUpgrade(card, [name]) && usable(card.actions.banish ?? null));
         if (index >= 0) return { kind: "banish", cardIndex: index, action: snapshot.cards[index].actions.banish, description: `\u653E\u9010\u300C${snapshot.cards[index].name}\u300D` };
       }
     }
     const targets = snapshot.kind === "levelup" ? rules.targets : profile.chestPriorities;
     const rerollEnabled = snapshot.kind === "levelup" ? settings.autoReroll : settings.chestAutoReroll;
-    const matched = snapshot.cards.some((card) => targets.some((name) => normalizeName(name) === normalizeName(priorityName(card.name, snapshot.kind))));
+    const matched = snapshot.cards.some((card) => (snapshot.kind !== "levelup" || !isBanishUpgrade(card, rules.banishAfterLearning)) && targets.some((name) => normalizeName(name) === normalizeName(priorityName(card.name, snapshot.kind))));
     if (rerollEnabled && targets.length > 0 && !matched && usable(snapshot.reroll)) return { kind: "reroll", cardIndex: null, action: snapshot.reroll, description: `\u5168\u90E8\u91CD\u62BD\uFF08\u5269\u9918 ${snapshot.reroll.left} \u6B21\uFF09` };
     return null;
   }
@@ -162,6 +164,8 @@
       const badge = text(element, ".pk-badge");
       const name = text(element, ".pk-name");
       const fresh = kind === "levelup" && !!element.querySelector(".pk-ribbon");
+      const rarity = readRarity(badge, fresh);
+      const skillState = kind !== "levelup" ? "unknown" : fresh ? "new" : rarity !== null && rarity >= 0 ? "owned" : "unknown";
       const actions = {};
       for (const action of readActions(element.closest(".pk-slot")?.querySelector(".pk-acts") ?? null)) {
         if (action.kind === "focus" || action.kind === "banish") actions[action.kind] = action;
@@ -169,7 +173,8 @@
       return {
         name,
         badge,
-        rarity: readRarity(badge, fresh),
+        rarity,
+        skillState,
         details: [text(element, ".pk-sub"), text(element, ".pk-lines")].filter(Boolean).join(" \xB7 "),
         requiresConfirmation: !!element.closest(".pk-slot")?.querySelector(".pk-back"),
         confirmationText: element.closest(".pk-slot")?.querySelector(".pk-back")?.textContent?.trim() ?? "",
@@ -185,7 +190,7 @@
       title,
       cards,
       reroll,
-      signature: JSON.stringify([kind, title, text(root, "#pk-sub"), text(root, "#pk-gain"), actionSignature(reroll), cards.map((c) => [c.name, c.badge, c.details, c.requiresConfirmation, c.confirmationText, actionSignature(c.actions.focus), actionSignature(c.actions.banish)])]),
+      signature: JSON.stringify([kind, title, text(root, "#pk-sub"), text(root, "#pk-gain"), actionSignature(reroll), cards.map((c) => [c.name, c.badge, c.skillState, c.details, c.requiresConfirmation, c.confirmationText, actionSignature(c.actions.focus), actionSignature(c.actions.banish)])]),
       timer: visible(root.querySelector("#pk-timer")) ? text(root, "#pk-timer") : "",
       closing: root.classList.contains("closing") || !!root.querySelector(".pk-slot.chosen"),
       confirming: !!root.querySelector(".pk-slot.asking,.pk-slot.flip")
@@ -494,7 +499,7 @@
 .panel,.launcher { pointer-events:auto; }</style>
       <button class="launcher" id="launcher" aria-label="\u958B\u555F RO \u9078\u724C\u52A9\u624B">\u2667 \u9078\u724C\u52A9\u624B</button>
       <section class="panel" id="panel" aria-label="RO \u9078\u724C\u52A9\u624B" hidden>
-        <header><span class="logo" aria-hidden="true">\u2667</span><div><strong>RO \u9078\u724C\u52A9\u624B</strong><small>\u4F60\u7684\u6E05\u55AE\uFF0C\u4F60\u7684\u6253\u6CD5 \xB7 v0.3.0</small></div><button class="icon" id="collapse" aria-label="\u6536\u5408\u9762\u677F">\u2212</button></header>
+        <header><span class="logo" aria-hidden="true">\u2667</span><div><strong>RO \u9078\u724C\u52A9\u624B</strong><small>\u4F60\u7684\u6E05\u55AE\uFF0C\u4F60\u7684\u6253\u6CD5 \xB7 v0.3.1</small></div><button class="icon" id="collapse" aria-label="\u6536\u5408\u9762\u677F">\u2212</button></header>
         <div class="body">
           <div class="toolbar"><span class="mode" id="mode">PREVIEW / \u9810\u89BD</span><button id="toggle" class="primary">\u555F\u7528\u81EA\u52D5\u9078\u724C</button></div>
           <p class="status" id="status" role="status" aria-live="polite"></p>
@@ -517,8 +522,8 @@
           <div class="section"><span class="label">\u76EE\u524D\u9078\u724C</span><div id="current" class="current"><div class="empty">\u5347\u7D1A\u6216\u5BF6\u7BB1\u9078\u724C\u51FA\u73FE\u5F8C\uFF0C\u6703\u5728\u9019\u88E1\u986F\u793A\u3002</div></div></div>
           <details class="section" id="advanced"><summary>\u9078\u724C\u8A2D\u5B9A</summary>
             <label class="checkbox-row"><input id="auto-focus" type="checkbox">\u6280\u80FD\u7B2C\u4E00\u9806\u4F4D\u81EA\u52D5\u5C08\u6CE8</label>
-            <label class="checkbox-row"><input id="auto-banish" type="checkbox">\u6280\u80FD\u6700\u5F8C\u5169\u9806\u4F4D\u81EA\u52D5\u653E\u9010</label>
-            <p class="note">\u6280\u80FD\u6E05\u55AE\u81F3\u5C11 3 \u9805\u624D\u555F\u7528\u653E\u9010\uFF0C\u653E\u9010\u5C0D\u8C61\u4E0D\u6703\u88AB\u81EA\u52D5\u9078\u53D6\u3002\u5C08\u6CE8\u3001\u653E\u9010\u6709\u5269\u9918\u6B21\u6578\u624D\u6703\u57F7\u884C\u3002</p>
+            <label class="checkbox-row"><input id="auto-banish" type="checkbox">\u6280\u80FD\u6700\u5F8C\u5169\u9806\u4F4D\uFF1A\u5148\u53D6\u5F97\uFF0C\u518D\u653E\u9010</label>
+            <p class="note">\u6280\u80FD\u6E05\u55AE\u81F3\u5C11 3 \u9805\u624D\u555F\u7528\u3002\u6700\u5F8C\u5169\u9806\u4F4D\u5C1A\u672A\u53D6\u5F97\u6642\u4ECD\u4F9D\u9806\u4F4D\u9078\u5165\uFF1B\u5DF2\u53D6\u5F97\u5F8C\uFF0C\u518D\u51FA\u73FE\u5347\u7D1A\u724C\u624D\u653E\u9010\u3001\u4E0D\u7E7C\u7E8C\u5347\u7D1A\u3002\u5C08\u6CE8\u3001\u653E\u9010\u6709\u5269\u9918\u6B21\u6578\u624D\u6703\u57F7\u884C\u3002</p>
             <label class="checkbox-row"><input id="auto-reroll" type="checkbox">\u6280\u80FD\u6C92\u6709\u76EE\u6A19\u724C\u6642\u5168\u90E8\u91CD\u62BD</label>
             <label class="checkbox-row"><input id="chest-auto-reroll" type="checkbox">\u5BF6\u7BB1\u6C92\u6709\u76EE\u6A19\u724C\u6642\u5168\u90E8\u91CD\u62BD</label>
             <p class="note">\u6709\u8A2D\u5B9A\u76EE\u6A19\u6E05\u55AE\u624D\u6703\u91CD\u62BD\u3002\u91CD\u62BD\u6B21\u6578\u7528\u5B8C\u5F8C\uFF0C\u4F9D\u4E0B\u65B9\u672A\u547D\u4E2D\u898F\u5247\u8655\u7406\u3002</p>
@@ -730,10 +735,10 @@
         label.textContent = name;
         item.append(rank, label);
         if (this.editingKind === "levelup") {
-          const role = rules.focus === name ? "\u5C08\u6CE8" : rules.banished.includes(name) ? "\u653E\u9010" : "";
+          const role = rules.focus === name ? "\u5C08\u6CE8" : rules.banishAfterLearning.includes(name) ? "\u53D6\u5F97\u5F8C\u653E\u9010" : "";
           if (role) {
             const tag = document.createElement("span");
-            tag.className = `rule-tag ${role === "\u653E\u9010" ? "banish" : ""}`;
+            tag.className = `rule-tag ${role === "\u53D6\u5F97\u5F8C\u653E\u9010" ? "banish" : ""}`;
             tag.textContent = role;
             item.append(tag);
           }
@@ -826,8 +831,9 @@
             });
             row.append(name, add);
             block.append(row);
+            const skillStatus = cardKind !== "levelup" ? "" : card.skillState === "new" ? "\u5C1A\u672A\u53D6\u5F97" : card.skillState === "owned" ? "\u5DF2\u53D6\u5F97\u30FB\u5347\u7D1A\u724C" : "\u53D6\u5F97\u72C0\u614B\u672A\u77E5";
             const detail = document.createElement("small");
-            detail.textContent = [card.badge, card.details, card.requiresConfirmation ? "\u5C07\u66FF\u63DB\u539F\u6709\u9053\u5177" : ""].filter(Boolean).join(" \xB7 ");
+            detail.textContent = [skillStatus, card.badge, card.details, card.requiresConfirmation ? "\u5C07\u66FF\u63DB\u539F\u6709\u9053\u5177" : ""].filter(Boolean).join(" \xB7 ");
             block.append(detail);
             if (recommended) {
               const why = document.createElement("div");
