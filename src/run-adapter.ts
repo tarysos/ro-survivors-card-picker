@@ -3,7 +3,7 @@ import { normalizeName } from './core';
 
 export interface StageChoice { name: string; element: HTMLButtonElement; available: boolean; selected: boolean }
 export interface RunScreen {
-  kind: 'loading' | 'loot' | 'settlement' | 'stages' | 'dialog' | 'blocked' | 'lobby' | 'battle' | 'unknown';
+  kind: 'loading' | 'loot' | 'settlement' | 'stages' | 'dialog' | 'lobbyChoice' | 'blocked' | 'lobby' | 'battle' | 'unknown';
   root: HTMLElement | null;
   label: string;
 }
@@ -17,7 +17,12 @@ export function readRunScreen(): RunScreen {
   if (visible(byId('drop-reveal'))) return { kind: 'loot', root: byId('drop-reveal'), label: '掉落提示' };
   for (const [id, kind] of [['loading', 'loading'], ['npc-dialog', 'dialog'], ['gameover', 'settlement'], ['stages', 'stages']] as const) {
     const root = byId(id);
-    if (visible(root)) return { kind, root, label: root.querySelector('.ro-title')?.textContent?.trim() ?? '' };
+    if (!visible(root)) continue;
+    if (kind === 'dialog' && root.querySelector('#npc-text .lb-pick')
+      && labels(['選擇大廳', 'Choose a lobby', 'Elige un lobby', 'Escolha um lobby'], root.querySelector('#npc-name')?.textContent ?? '')) {
+      return { kind: 'lobbyChoice', root, label: '選擇大廳' };
+    }
+    return { kind, root, label: root.querySelector('.ro-title')?.textContent?.trim() ?? '' };
   }
   if (document.body.classList.contains('in-lobby') && visible(byId('lobby-ui'))) return { kind: 'lobby', root: byId('lobby-ui'), label: '城鎮' };
   if (!document.body.classList.contains('in-lobby') && visible(byId('hud'))) return { kind: 'battle', root: byId('hud'), label: '戰鬥' };
@@ -49,6 +54,12 @@ export function captainPrompt(): HTMLButtonElement | null {
 }
 export function departureButton(): HTMLButtonElement | null {
   return usableButton('stg-go');
+}
+export function offlinePlayButton(dialog: HTMLElement | null): HTMLButtonElement | null {
+  const buttons = [...(dialog?.querySelectorAll<HTMLButtonElement>('#npc-options > button') ?? [])].filter(button =>
+    visible(button) && !button.disabled && button.getAttribute('aria-disabled') !== 'true'
+    && labels(['離線遊玩', 'Play offline', 'Jugar sin conexión', 'Jogar sem conexão'], button.textContent ?? ''));
+  return buttons.length === 1 ? buttons[0] : null;
 }
 export function usableButton(id: string): HTMLButtonElement | null {
   const element = byId(id);

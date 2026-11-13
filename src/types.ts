@@ -1,14 +1,14 @@
 import type { RollCategory, RollChoice } from './roll-rules';
 
 export type PickKind = 'levelup' | 'chest';
-export type ItemRule = 'focus' | 'banish';
+export type ItemRule = 'focus' | 'banish' | 'highQuality';
 export type ItemRules = Record<ItemRule, string[]>;
 export interface Profile {
   id: string; name: string; priorities: string[]; chestPriorities: string[];
   rules: Record<PickKind, ItemRules>;
 }
 export interface Settings {
-  version: 7;
+  version: 8;
   profiles: Profile[];
   activeProfileId: string;
   fallback: 'pause' | 'rarity';

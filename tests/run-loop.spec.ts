@@ -53,6 +53,48 @@ test('captures a selected stage, exposes live unlocked choices and starts from t
   expect(await actions(page)).toEqual(['captain', 'depart:普隆德拉原野', 'confirm']);
 });
 
+test('settlement interrupted by the lobby picker goes offline, counts once and departs again', async ({ page }) => {
+  await configure(page);
+  await page.evaluate(() => {
+    const f = (window as any).runFixture; f.chooseLobbyOnReturn = true; f.settle();
+  });
+  await start(page);
+  await expect.poll(() => actions(page), { timeout: 15_000 }).toEqual(['return', 'offline', 'captain', 'select:斐揚森林', 'depart:斐揚森林', 'confirm']);
+  await expect(page.locator('#loop-count')).toContainText('已結算 1 場');
+  await expect(page.locator('#loop-status')).toContainText('戰鬥中');
+});
+
+test('only clicks the ready offline option once in an open lobby picker', async ({ page }) => {
+  await configure(page);
+  await page.evaluate(() => {
+    const f = (window as any).runFixture; f.reject = 'offline'; f.openLobbyChoice();
+  });
+  await page.waitForTimeout(1100);
+  expect(await actions(page)).toEqual([]);
+  const offline = page.getByRole('button', { name: '離線遊玩', exact: true });
+  await offline.evaluate(button => (button as HTMLButtonElement).disabled = true);
+  await start(page);
+  await expect(page.locator('#loop-status')).toContainText('等待「離線遊玩」按鈕就緒');
+  expect(await actions(page)).toEqual([]);
+  await offline.evaluate(button => (button as HTMLButtonElement).disabled = false);
+  await expect.poll(() => actions(page)).toEqual(['offline']);
+  await page.waitForTimeout(1500);
+  expect(await actions(page)).toEqual(['offline']);
+  await page.evaluate(() => (window as any).runFixture.lobby());
+  await expect.poll(() => actions(page)).toContain('captain');
+  await expect(page.locator('#loop-count')).toContainText('已結算 0 場');
+});
+
+test('a manual lobby choice cancels a pending offline click', async ({ page }) => {
+  await configure(page); await page.evaluate(() => (window as any).runFixture.openLobbyChoice());
+  await start(page);
+  await expect(page.locator('#loop-status')).toContainText('即將選擇離線遊玩');
+  await page.getByRole('button', { name: '阿斯嘉特' }).click();
+  await expect(page.locator('#loop-toggle')).not.toBeChecked();
+  await page.waitForTimeout(1200);
+  expect(await actions(page)).toEqual(['online']);
+});
+
 test('blank target cannot enable the loop or auto picker', async ({ page }) => {
   await start(page);
   await expect(page.locator('#loop-status')).toContainText('請先設定');

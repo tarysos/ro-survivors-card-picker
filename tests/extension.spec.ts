@@ -15,7 +15,40 @@ async function toggleRule(page: Page, rule: '專注' | '取得後放逐', name: 
   await page.getByRole('button', { name: `${rule} ${name}`, exact: true }).click();
 }
 
-test('all automation checkboxes are visible at the top and reflect rejected starts', async ({ page }, info) => {
+test('high-quality toggles persist independently and affect skill and chest selection', async ({ page }) => {
+  const quality = page.getByRole('button', { name: '高品質優先 B', exact: true });
+  const recommended = page.locator('.pk-card[data-ro-recommended="true"] .pk-name');
+  await add(page, 'A'); await add(page, 'B');
+  await toggleRule(page, '專注', 'B');
+  await quality.click();
+  await expect(page.getByRole('button', { name: '專注 B' })).toHaveAttribute('aria-pressed', 'true');
+  await page.reload();
+  await page.getByRole('button', { name: '開啟 RO 選牌助手' }).click();
+  await expect(quality).toHaveAttribute('aria-pressed', 'true');
+  await round(page, { cards: [{ name: 'A', badge: '傳說' }, { name: 'B', badge: '史詩', fresh: true }] });
+  await expect(recommended).toHaveText('B');
+  await quality.click();
+  await expect(recommended).toHaveText('A');
+  await quality.click(); await enable(page);
+  await expect.poll(async () => (await selections(page))[0]?.name).toBe('B');
+  await expect(page.locator('#picker')).toHaveClass(/hidden/);
+  await page.locator('#toggle').uncheck();
+
+  await page.getByRole('button', { name: '寶箱道具', exact: true }).click();
+  await add(page, 'A'); await add(page, 'B');
+  await expect(quality).toHaveAttribute('aria-pressed', 'false');
+  await quality.click();
+  await round(page, { title: '寶箱', gain: false, cards: [{ name: 'A', badge: '傳說' }, { name: 'B +3', badge: '史詩' }] });
+  await expect(recommended).toHaveText('B +3');
+  await toggleRule(page, '取得後放逐', 'B');
+  await expect(quality).toHaveAttribute('aria-pressed', 'true');
+  await expect(recommended).toHaveText('A');
+  await page.getByRole('button', { name: '移除 B', exact: true }).click();
+  await add(page, 'B');
+  await expect(quality).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('automation checkboxes show a rejected loop start and walking on standby', async ({ page }, info) => {
   await page.setViewportSize({ width: 925, height: 390 });
   const panel = page.locator('#panel');
   const automation = panel.getByRole('region', { name: '自動功能' });
@@ -32,11 +65,11 @@ test('all automation checkboxes are visible at the top and reflect rejected star
   await expect(loop).not.toBeChecked();
   await expect(panel.locator('#loop-status')).toContainText('請先設定循環關卡');
   const walk = automation.getByRole('checkbox', { name: '小範圍走動' });
-  for (let attempt = 0; attempt < 2; attempt++) {
-    await walk.click();
-    await expect(walk).not.toBeChecked();
-    await expect(panel.locator('#walk-status')).toBeVisible();
-  }
+  await walk.check();
+  await expect(walk).toBeChecked();
+  await expect(panel.locator('#walk-status')).toContainText('走動待命');
+  await automation.getByRole('button', { name: '全部暫停' }).click();
+  await expect(walk).not.toBeChecked();
   await expect(automation.getByRole('button', { name: '全部暫停' })).toBeDisabled();
 });
 

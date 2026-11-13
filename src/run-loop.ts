@@ -1,9 +1,9 @@
 import { normalizeName } from './core';
-import { captainPrompt, departureButton, difficultyConfirmation, readRunScreen, selectedStageName, stageChoices, usableButton, type RunScreen } from './run-adapter';
+import { captainPrompt, departureButton, difficultyConfirmation, offlinePlayButton, readRunScreen, selectedStageName, stageChoices, usableButton, type RunScreen } from './run-adapter';
 
 export interface LoopState { enabled: boolean; status: string; completed: number; logs: string[] }
-type Expected = 'lobby' | 'stages' | 'selected' | 'difficulty' | 'battle';
-interface Attempt { expected: Expected; at: number; timeout: number; label: string }
+type Expected = 'returned' | 'lobby' | 'stages' | 'selected' | 'difficulty' | 'battle';
+interface Attempt { key: string; expected: Expected; at: number; timeout: number; label: string }
 
 /** Only observed screen transitions acknowledge actions; timeouts never retry a click. */
 export class RunLoop {
@@ -26,7 +26,7 @@ export class RunLoop {
       this.tick();
     });
     document.addEventListener('click', event => {
-      if (this.state.enabled && event.isTrusted && event.target instanceof Element && event.target.closest('#stages button, #npc-options button, #btn-restart, #lobby-prompt, #lobby-switch')) {
+      if (this.state.enabled && event.isTrusted && event.target instanceof Element && event.target.closest('#stages button, #npc-options button, #npc-text .lb-pick button, #btn-restart, #lobby-prompt, #lobby-switch')) {
         this.stop('已交由你操作，循環已暫停');
       }
     }, true);
@@ -36,7 +36,7 @@ export class RunLoop {
     document.addEventListener('keydown', event => {
       if (this.state.enabled && event.isTrusted && ['Escape', 'Enter', ' '].includes(event.key)
         && !event.composedPath().some(node => node instanceof HTMLElement && node.id === 'ro-picker-assistant')
-        && ['stages', 'dialog', 'settlement'].includes(readRunScreen().kind)) this.stop('已交由你操作，循環已暫停');
+        && ['stages', 'dialog', 'lobbyChoice', 'settlement'].includes(readRunScreen().kind)) this.stop('已交由你操作，循環已暫停');
     }, true);
   }
   subscribe(listener: (state: LoopState) => void): void { this.listeners.add(listener); listener(this.state); }
@@ -63,6 +63,7 @@ export class RunLoop {
   private matches(name: string): boolean { return normalizeName(name) === normalizeName(this.stageName); }
   private acknowledged(screen: RunScreen): boolean {
     switch (this.attempt?.expected) {
+      case 'returned':
       case 'lobby': return screen.kind === 'lobby';
       case 'stages': return screen.kind === 'stages';
       case 'selected': return screen.kind === 'stages' && stageChoices().some(stage => stage.selected && this.matches(stage.name)) && this.matches(selectedStageName());
@@ -83,7 +84,7 @@ export class RunLoop {
     if (performance.now() - this.candidate.at < delay) { this.status(`即將${label}`); return; }
     // Called only after re-reading and validating the current screen in this tick.
     this.candidate = null;
-    this.attempt = { expected, at: performance.now(), timeout: expected === 'battle' || expected === 'lobby' ? 90000 : 8000, label };
+    this.attempt = { key, expected, at: performance.now(), timeout: ['battle', 'returned', 'lobby'].includes(expected) ? 90000 : 8000, label };
     this.log(label); this.status(`等待遊戲確認：${label}`);
     button.click();
   }
@@ -97,9 +98,17 @@ export class RunLoop {
     const screen = readRunScreen();
     if (screen.kind === 'blocked') { this.stop(`「${screen.label}」需要手動處理，循環已暫停`); return; }
     if (screen.kind === 'loot') { this.wait('loot', '等待掉落提示關閉', 90000); return; }
+    if (screen.kind === 'lobbyChoice' && this.attempt?.key !== 'offline') {
+      const button = offlinePlayButton(screen.root);
+      if (button) {
+        const expected = this.attempt?.expected === 'returned' ? 'returned' : 'lobby';
+        this.click('offline', button, '選擇離線遊玩', expected);
+      } else this.wait('offline', '等待「離線遊玩」按鈕就緒');
+      return;
+    }
     if (this.attempt) {
       if (this.acknowledged(screen)) {
-        if (this.attempt.expected === 'lobby') { this.state.completed++; this.log(`已結算 ${this.state.completed} 場，回到城鎮`); }
+        if (this.attempt.expected === 'returned') { this.state.completed++; this.log(`已結算 ${this.state.completed} 場，回到城鎮`); }
         if (this.attempt.expected === 'difficulty') { this.ownDifficulty = true; this.difficultyButton = difficultyConfirmation(); }
         if (this.attempt.expected === 'battle') { this.ownDifficulty = false; this.log(`已進入「${this.stageName}」`); }
         this.attempt = null; this.stalledKey = '';
@@ -117,7 +126,7 @@ export class RunLoop {
     }
     if (screen.kind === 'settlement') {
       const button = usableButton('btn-restart');
-      if (button) this.click('return', button, '完成結算並回城', 'lobby', 2500);
+      if (button) this.click('return', button, '完成結算並回城', 'returned', 2500);
       else this.wait('settlement', '等待結算按鈕就緒');
       return;
     }

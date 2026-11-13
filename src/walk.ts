@@ -35,7 +35,7 @@ export class LocalWalk {
   private held: Direction | null = null;
   private releaseTimer?: ReturnType<typeof setTimeout>;
   private watchFrame = 0;
-  private interval?: ReturnType<typeof setInterval>;
+  private timer?: ReturnType<typeof setTimeout>;
   private manualKeys = new Set<string>();
   private manualPointers = new Set<number>();
   private resumeAt: number | null = null;
@@ -93,20 +93,16 @@ export class LocalWalk {
   }
   start(): void {
     if (this.enabled) return;
-    if (this.manualHeld || readRunScreen().kind !== 'battle' || this.blocked()) {
-      this.setStatus('請在戰鬥畫面放開移動鍵後啟用'); return;
-    }
-    this.origin = minimapPosition();
-    if (!this.origin) { this.setStatus('請先在戰鬥中顯示小地圖座標'); return; }
     this.enabled = true;
-    this.newExcursion();
-    this.nextStep = performance.now() + this.settings.walkIntervalMs;
-    this.setStatus('已記住起點，等待下一步');
-    this.interval = setInterval(() => this.tick(), 80);
+    this.poll();
+  }
+  private poll(): void {
+    this.tick();
+    if (this.enabled) this.timer = setTimeout(() => this.poll(), this.origin ? 80 : 500);
   }
   stop(message = '走動已停止'): void {
     this.release();
-    clearInterval(this.interval);
+    clearTimeout(this.timer);
     this.origin = null;
     this.resumeAt = null;
     this.enabled = false;
@@ -146,15 +142,20 @@ export class LocalWalk {
     this.returning = false; this.previousStep = null; this.stalled = 0; this.bestReturnDistance = Infinity;
   }
   private tick(): void {
-    if (!this.origin) return;
     const screen = readRunScreen();
-    if (['settlement', 'lobby', 'stages', 'loading'].includes(screen.kind)) { this.stop('已離開戰鬥，走動已停止'); return; }
-    if (screen.kind !== 'battle' || this.blocked()) { this.rest(); return; }
+    if (['settlement', 'lobby', 'lobbyChoice', 'stages', 'loading'].includes(screen.kind) || document.body.classList.contains('in-lobby')) {
+      this.origin = null;
+      this.resumeAt = null;
+    }
+    if (screen.kind !== 'battle' || this.blocked()) {
+      this.rest(this.origin ? '走動暫停 · 返回戰鬥後繼續' : '走動待命 · 進入戰鬥後開始');
+      return;
+    }
     const pos = minimapPosition();
     if (!pos) { this.rest('走動暫停 · 等待小地圖座標'); return; }
-    if (pos.area !== this.origin.area) { this.stop('已離開原區域，走動已停止'); return; }
+    if (this.origin && pos.area !== this.origin.area) { this.rest('走動暫停 · 等待回到本場起點所在區域'); return; }
+    if (this.manualHeld) { this.setStatus('手動移動中 · 放開後 10 秒恢復走動'); return; }
     if (this.resumeAt !== null) {
-      if (this.manualHeld) { this.setStatus('手動移動中 · 放開後 10 秒恢復走動'); return; }
       const remaining = this.resumeAt - performance.now();
       if (remaining > 0) {
         this.setStatus(`手動移動已結束 · ${Math.ceil(remaining / 1000)} 秒後恢復走動`); return;
@@ -163,6 +164,12 @@ export class LocalWalk {
       this.newExcursion();
       this.nextStep = 0;
       this.resumeAt = null;
+    } else if (!this.origin) {
+      this.origin = pos;
+      this.newExcursion();
+      this.nextStep = performance.now() + this.settings.walkIntervalMs;
+      this.setStatus('已記住本場起點，等待下一步');
+      return;
     }
     const away = distance(this.origin.point, pos.point);
     if (away > this.settings.walkRadius) {

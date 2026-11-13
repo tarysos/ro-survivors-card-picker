@@ -35,7 +35,7 @@ export class Panel {
       <style>${styles}\n.panel,.launcher { pointer-events:auto; }</style>
       <button class="launcher" id="launcher" aria-label="開啟 RO 選牌助手">♧ 選牌助手</button>
       <section class="panel" id="panel" aria-label="RO 選牌助手" hidden>
-        <header><span class="logo" aria-hidden="true">♧</span><div><strong>RO 選牌助手</strong><small>你的清單，你的打法 · v0.7.2</small></div><button class="icon" id="collapse" aria-label="收合面板">−</button></header>
+        <header><span class="logo" aria-hidden="true">♧</span><div><strong>RO 選牌助手</strong><small>你的清單，你的打法 · v0.8.1</small></div><button class="icon" id="collapse" aria-label="收合面板">−</button></header>
         <div class="body">
           <section id="automation" aria-labelledby="automation-title">
             <div class="toolbar"><strong id="automation-title">自動功能</strong><button id="pause-all" disabled>全部暫停</button></div>
@@ -75,7 +75,7 @@ export class Panel {
               <label>步伐間隔（秒）<input id="walk-interval" type="number" min="${minWalkIntervalMs / 1000}" step="0.001" required></label>
             </div>
             <div id="walk-input-error" class="message" role="status"></div>
-            <p class="note">手動移動時暫停。放開操作 10 秒後，以角色當下的位置為中心繼續走動。</p>
+            <p class="note">可在城鎮先勾選。進入戰鬥後開始走動，結算回城後待命，下一場自動接續。手動移動時暫停，放開操作 10 秒後以當下位置為中心繼續走動。</p>
           </details>
           <details class="section" id="loop-settings"><summary>循環刷關 · 遠征隊長</summary>
             <label class="label" for="loop-stage">循環關卡</label>
@@ -84,7 +84,7 @@ export class Panel {
             <div class="row loop-actions"><button id="loop-capture">使用目前關卡</button></div>
             <p class="note" id="loop-count">本分頁已結算 0 場</p>
             <p class="note">可在關卡選單或戰鬥中讀取名稱；開啟隊長選單後也可從輸入框選關。沿用遊戲目前難度，勝利或死亡結算後等 2.5 秒回城，再次出發。啟用循環會一併啟用自動選牌。</p>
-            <p class="note">回城出生點可直接與隊長交談；若已走遠，請先靠近隊長。支援單人一般關卡；劇情、組隊與其他對話會暫停。分頁需留在前景。</p>
+            <p class="note">回城若出現「選擇大廳」，會按「離線遊玩」再找隊長。若已離開出生點，請先靠近隊長。支援單人一般關卡，分頁需留在前景。遇到劇情或組隊對話會暫停。</p>
             <details><summary>最近循環紀錄</summary><div id="loop-logs" class="log"></div></details>
           </details>
           <div class="section">
@@ -257,34 +257,42 @@ export class Panel {
     this.input('delay-max').value = String(this.settings.delayMaxMs);
     if (this.shadow.activeElement !== this.input('loop-stage')) this.input('loop-stage').value = this.settings.loopStageName;
     for (const kind of ['levelup', 'chest'] as const) this.el(`kind-${kind}`).setAttribute('aria-pressed', String(kind === this.editingKind));
-    this.el('priority-help').textContent = this.editingKind === 'chest'
+    const rules = this.profile().rules[this.editingKind];
+    const usualOrder = this.editingKind === 'chest'
       ? '清單內先選品質最高的道具，品質相同才依順位。拖曳或使用 ↑ ↓ 排序。'
       : this.settings.preferNewSkills ? '清單內橘色優先 → 尚未取得 → 原順位。同類候選由上到下優先。' : '由上到下依序優先。拖曳或使用 ↑ ↓ 排序。';
+    this.el('priority-help').textContent = rules.highQuality.length
+      ? `優先選標記為「高品質優先」的紫色以上卡牌，多張時先比品質，再比清單順位。其餘情況：${usualOrder}`
+      : usualOrder;
     this.el('empty-priorities').textContent = this.editingKind === 'chest' ? '尚未設定寶箱順位。可從目前寶箱加入，或在上方勾選「寶箱未命中選最高稀有度」。' : '還沒有優先技能。輸入遊戲顯示的名稱，或從下方目前選牌加入。';
     const names = this.names();
     this.el('empty-priorities').hidden = names.length > 0;
     const list = this.el('priorities'); list.replaceChildren();
-    const rules = this.profile().rules[this.editingKind];
     names.forEach((name, index) => {
       const item = document.createElement('li'); item.className = 'priority'; item.draggable = true;
       const rank = document.createElement('span'); rank.className = 'rank'; rank.textContent = String(index + 1);
       const label = document.createElement('span'); label.className = 'name'; label.textContent = name;
       item.append(rank, label);
-      for (const [key, title] of [['focus', '專注'], ['banish', '取得後放逐']] as const) {
+      const toggles = document.createElement('div'); toggles.className = 'item-rules';
+      for (const [key, title] of [['focus', '專注'], ['banish', '取得後放逐'], ['highQuality', '高品質優先']] as const) {
         const toggle = document.createElement('button');
         toggle.className = `rule-toggle ${key}`; toggle.textContent = title;
+        if (key === 'highQuality') toggle.title = '這項出現紫色（史詩）以上品質時優先選取';
         toggle.setAttribute('aria-label', `${title} ${name}`);
         const active = rules[key].includes(name);
         toggle.setAttribute('aria-pressed', String(active));
         toggle.addEventListener('click', () => {
-          rules.focus = rules.focus.filter(value => value !== name);
-          rules.banish = rules.banish.filter(value => value !== name);
-          if (!active) rules[key].push(name);
+          rules[key] = active ? rules[key].filter(value => value !== name) : [...rules[key], name];
+          if (!active && key !== 'highQuality') {
+            const other = key === 'focus' ? 'banish' : 'focus';
+            rules[other] = rules[other].filter(value => value !== name);
+          }
           this.commit();
           this.el('priorities').querySelectorAll('.priority')[index]?.querySelector<HTMLButtonElement>(`.${key}`)?.focus();
         });
-        item.append(toggle);
+        toggles.append(toggle);
       }
+      item.append(toggles);
       for (const [symbol, title, target] of [['↑', '上移', index - 1], ['↓', '下移', index + 1], ['×', '移除', -1]] as const) {
         const button = document.createElement('button'); button.className = 'icon'; button.textContent = symbol;
         button.setAttribute('aria-label', `${title} ${name}`);
@@ -294,6 +302,7 @@ export class Panel {
           names.splice(index, 1);
           rules.focus = rules.focus.filter(value => value !== name);
           rules.banish = rules.banish.filter(value => value !== name);
+          rules.highQuality = rules.highQuality.filter(value => value !== name);
           this.commit();
         });
         item.append(button);
@@ -324,12 +333,12 @@ export class Panel {
     }
     this.el('status').textContent = state.status;
     const running = state.enabled || this.walking || !!this.loopState?.enabled;
-    this.el('mode').textContent = running ? 'AUTO / 自動執行中' : 'PREVIEW / 預覽';
+    this.el('mode').textContent = running ? 'AUTO / 自動功能已啟用' : 'PREVIEW / 預覽';
     this.el('mode').classList.toggle('on', running);
     this.input('toggle').checked = state.enabled;
     (this.el('pause-all') as HTMLButtonElement).disabled = !running;
     this.el('launcher').classList.toggle('active', state.enabled || this.walking);
-    this.el('launcher').textContent = this.loopState?.enabled ? '選牌助手 · 循環中' : this.walking ? '選牌助手 · 走動中' : state.enabled ? '選牌助手 · 自動' : '♧ 選牌助手';
+    this.el('launcher').textContent = this.loopState?.enabled ? '選牌助手 · 循環中' : this.walking ? '選牌助手 · 走動已勾選' : state.enabled ? '選牌助手 · 自動' : '♧ 選牌助手';
     this.el('timer').textContent = state.snapshot?.timer ? `${state.snapshot.timer} · 遊戲倒數仍會繼續，逾時可能自行選牌。` : '';
     const key = JSON.stringify([state.snapshot?.signature, state.snapshot?.closing, state.recommendation, this.profile().priorities, this.profile().chestPriorities]);
     if (key !== this.currentKey) {

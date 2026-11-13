@@ -188,10 +188,10 @@
     name,
     priorities: [],
     chestPriorities: [],
-    rules: { levelup: { focus: [], banish: [] }, chest: { focus: [], banish: [] } }
+    rules: { levelup: { focus: [], banish: [], highQuality: [] }, chest: { focus: [], banish: [], highQuality: [] } }
   });
   var defaults = () => ({
-    version: 7,
+    version: 8,
     profiles: [emptyProfile("default", "\u6211\u7684\u512A\u5148\u6E05\u55AE")],
     activeProfileId: "default",
     fallback: "pause",
@@ -225,7 +225,7 @@
       return names.filter((name) => marked.has(normalizeName(name)));
     };
     const focus = valid(raw?.focus);
-    return { focus, banish: valid(raw?.banish).filter((name) => !focus.includes(name)) };
+    return { focus, banish: valid(raw?.banish).filter((name) => !focus.includes(name)), highQuality: valid(raw?.highQuality) };
   }
   function sanitizeSettings(raw) {
     const base = defaults();
@@ -239,7 +239,8 @@
       const chestPriorities = uniqueNames((Array.isArray(p.chestPriorities) ? p.chestPriorities : []).filter((n) => typeof n === "string").map((n) => priorityName(n, "chest")));
       const levelup = (data.version ?? 0) < 7 && !p.rules ? {
         focus: data.autoFocusFirst !== false ? priorities.slice(0, 1) : [],
-        banish: data.autoBanishLastTwo !== false && priorities.length >= 3 ? priorities.slice(-2) : []
+        banish: data.autoBanishLastTwo !== false && priorities.length >= 3 ? priorities.slice(-2) : [],
+        highQuality: []
       } : sanitizeRules(p.rules?.levelup, priorities);
       return [{
         id: p.id.slice(0, 100),
@@ -280,21 +281,32 @@
     if (kind !== "levelup" && kind !== "chest") return { index: null, reason: "\u50C5\u8655\u7406\u5347\u7D1A\u6280\u80FD\u8207\u5BF6\u7BB1\u9053\u5177\u9078\u724C" };
     const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
     const names = kind === "chest" ? profile.chestPriorities : profile.priorities;
-    const candidates = snapshot.cards.map((card, index) => ({ card, index })).filter(({ card }) => !isBanishUpgrade(card, profile.rules[kind].banish, kind));
+    const rules = profile.rules[kind];
+    const candidates = snapshot.cards.flatMap((card, index) => isBanishUpgrade(card, rules.banish, kind) ? [] : [{ index, name: priorityName(card.name, kind), rarity: card.rarity, ownership: card.ownership }]);
     if (!candidates.length && snapshot.cards.length) return { index: null, reason: "\u76EE\u524D\u53EA\u6709\u5DF2\u53D6\u5F97\u7684\u653E\u9010\u5C0D\u8C61\uFF0C\u8ACB\u91CD\u62BD\u6216\u624B\u52D5\u9078\u64C7" };
-    if (kind === "levelup" && settings.preferNewSkills) {
-      const matched = candidates.filter(({ card }) => names.some((name) => normalizeName(name) === normalizeName(card.name)));
-      const orange = matched.filter(({ card }) => card.rarity === 4);
-      const fresh = matched.filter(({ card }) => card.ownership === "new");
-      const preferred = orange.length ? orange : fresh;
-      if (preferred.length) {
-        const result2 = decide(preferred.map(({ card }) => card), names, "pause");
-        return { index: preferred[result2.index].index, reason: `${orange.length ? "\u6E05\u55AE\u5167\u6A58\u8272\uFF08\u50B3\u8AAA\uFF09\u6280\u80FD\u512A\u5148" : "\u512A\u5148\u88DC\u9F4A\u5C1A\u672A\u53D6\u5F97\u7684\u6E05\u55AE\u6280\u80FD"}\uFF1B${result2.reason}` };
+    const marked = new Set(rules.highQuality.map(normalizeName));
+    const epicOrBetter = candidates.filter((card) => card.rarity !== null && card.rarity >= 3 && marked.has(normalizeName(card.name)));
+    let pool = candidates;
+    let order = kind === "chest" ? "rarity" : "priority";
+    let reason = "";
+    if (epicOrBetter.length) {
+      pool = epicOrBetter;
+      order = "rarity";
+      reason = "\u9AD8\u54C1\u8CEA\u512A\u5148\uFF08\u53F2\u8A69\u4EE5\u4E0A\uFF09";
+    } else if (kind === "levelup" && settings.preferNewSkills) {
+      const matched = candidates.filter((card) => names.some((name) => normalizeName(name) === normalizeName(card.name)));
+      const orange = matched.filter((card) => card.rarity === 4);
+      const fresh = matched.filter((card) => card.ownership === "new");
+      if (orange.length) {
+        pool = orange;
+        reason = "\u6E05\u55AE\u5167\u6A58\u8272\uFF08\u50B3\u8AAA\uFF09\u6280\u80FD\u512A\u5148";
+      } else if (fresh.length) {
+        pool = fresh;
+        reason = "\u512A\u5148\u88DC\u9F4A\u5C1A\u672A\u53D6\u5F97\u7684\u6E05\u55AE\u6280\u80FD";
       }
     }
-    const cards = candidates.map(({ card }) => ({ ...card, name: priorityName(card.name, kind) }));
-    const result = decide(cards, names, kind === "chest" ? settings.chestFallback : settings.fallback, kind === "chest" ? "rarity" : "priority");
-    return { ...result, index: result.index === null ? null : candidates[result.index].index };
+    const result = decide(pool, names, kind === "chest" ? settings.chestFallback : settings.fallback, order);
+    return { index: result.index === null ? null : pool[result.index].index, reason: reason ? `${reason}\uFF1B${result.reason}` : result.reason };
   }
   function planPerk(snapshot, settings) {
     const kind = snapshot.kind;
@@ -347,10 +359,9 @@
     ["mythic", "m\xEDtico", "m\xEDtica", "\u795E\u8A71"]
   ];
   function readRarity(badge, fresh) {
-    if (fresh) return -1;
     const value = normalizeName(badge);
     const index = rarityGroups.findIndex((group) => group.includes(value));
-    return index >= 0 ? index : null;
+    return index >= 0 ? index : fresh ? -1 : null;
   }
   var minimumDelay = (count, requested) => Math.max(requested, 380 + count * 120 + 220);
   var sampleDelay = (settings, random = Math.random) => settings.delayMinMs + Math.floor(random() * (settings.delayMaxMs - settings.delayMinMs + 1));
@@ -839,7 +850,7 @@
   };
 
   // src/panel.css
-  var panel_default = ':host { all: initial; color-scheme: dark; font-family: "Segoe UI", "Microsoft JhengHei", sans-serif; font-size: 13px; color: #e9edf5; }\n* { box-sizing: border-box; }\nbutton, input, select { font: inherit; }\nbutton { cursor: pointer; }\nbutton:disabled { cursor: default; opacity: .4; }\nbutton:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid #6bd5b7; outline-offset: 2px; }\n.launcher { position: fixed; right: 18px; top: 18px; padding: 11px 15px; color: #d9fff3; background: #182b2b; border: 1px solid #4c7b71; border-radius: 12px; box-shadow: 0 8px 30px #0006; }\n.launcher.active::before { content: "\u25CF "; color: #6bdfb5; }\n.panel { position: fixed; right: 18px; top: 18px; width: 350px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 36px); overflow: auto; background: #151c27; border: 1px solid #334153; border-radius: 16px; box-shadow: 0 16px 64px #0009; }\n[hidden] { display: none !important; }\nheader { display: flex; align-items: center; padding: 17px 18px 13px; gap: 10px; border-bottom: 1px solid #2b3544; }\n.logo { color: #77dbbb; border: 1px solid #527a72; border-radius: 8px; padding: 6px; font-size: 18px; }\nheader strong { display: block; font-size: 16px; letter-spacing: .5px; }\nheader small { color: #99a7bc; font-size: 11px; }\nheader .icon { margin-left: auto; }\nbutton { color: #dce5f4; background: #253043; border: 1px solid #3b4a60; border-radius: 7px; padding: 7px 10px; }\nbutton:hover:not(:disabled) { background: #334158; }\n.icon { min-width: 28px; padding: 5px 7px; }\n.body { padding: 14px 16px 16px; }\n.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }\n#automation { margin-bottom: 12px; }\n#automation .toolbar { margin-bottom: 8px; }\n#automation .toolbar strong { font-size: 14px; }\n#pause-all { padding: 4px 9px; font-size: 11px; }\n.checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; }\n.checks label { display: flex; align-items: center; gap: 6px; min-height: 27px; cursor: pointer; font-size: 12px; line-height: 1.4; }\n.checks input { flex: none; width: 15px; height: 15px; padding: 0; margin: 0; accent-color: #77dbbb; cursor: pointer; }\n.run-checks { grid-template-columns: repeat(3, minmax(0, 1fr)); }\n.run-checks label { color: #e2ede9; font-weight: 600; }\n.pick-rules { min-width: 0; margin: 11px 0 0; padding: 5px 0 0; border: 0; border-top: 1px solid #334153; }\n.pick-rules legend { padding: 0 7px 0 0; color: #a4b5c9; font-size: 11px; }\n.mode { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #91a3bc; }\n.mode.on { color: #77dbbb; }\n.status { margin: 10px 0 5px; line-height: 1.7; font-size: 12px; color: #d6e4f3; min-height: 21px; }\n.note, .empty { color: #96a5ba; font-size: 11px; line-height: 1.7; }\n.timer { color: #ffc280; font-size: 11px; line-height: 1.7; }\n.section { margin-top: 16px; padding-top: 14px; border-top: 1px solid #2b3544; }\n.label { display: block; color: #c2cfdf; font-size: 12px; font-weight: 600; margin-bottom: 8px; }\n.row { display: flex; align-items: center; gap: 6px; }\ninput, select { min-width: 0; width: 100%; color: #e8edf6; background: #0f1520; border: 1px solid #344154; border-radius: 7px; padding: 8px; }\ninput::placeholder { color: #7f90a8; }\n.row input, .row select { flex: 1; }\n.row button { flex-shrink: 0; }\n.loop-actions { margin-top: 10px; flex-wrap: wrap; }\n.loop-actions button { flex: 1; font-size: 11px; }\n.kind-tabs { display: flex; gap: 6px; margin-top: 12px; }\n.kind-tabs button { flex: 1; font-size: 12px; }\n.kind-tabs button[aria-pressed="true"] { color: #9fe8d1; border-color: #538c7b; background: #213d35; }\n.delay-range { align-items: flex-end; }\n.roll-rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }\n.roll-rules label { margin: 0; font-size: 12px; color: #c2cfdf; }\n.delay-range label { flex: 1; min-width: 0; font-size: 11px; color: #96a5ba; margin-top: 5px; }\n.delay-range > span { padding-bottom: 8px; color: #96a5ba; }\nol { margin: 10px 0; padding: 0; list-style: none; max-height: 220px; overflow: auto; }\n.priority { display: flex; align-items: center; gap: 6px; padding: 7px 0; border-bottom: 1px solid #252f3e; }\n.rank { color: #77dbbb; width: 20px; font-variant-numeric: tabular-nums; text-align: center; flex-shrink: 0; }\n.rule-toggle { font-size: 11px; padding: 4px; flex-shrink: 0; }\n.rule-toggle.focus[aria-pressed="true"] { color: #b3f8df; background: #274c40; border-color: #77bda7; }\n.rule-toggle.banish[aria-pressed="true"] { color: #ffd0b8; background: #59392e; border-color: #bd8b70; }\n.name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }\n.priority .icon { font-size: 11px; min-width: 25px; padding: 4px; }\n.priority[draggable="true"] { cursor: grab; }\n.priority.drag-over { background: #284139; }\n.current { display: grid; gap: 7px; }\n.card { padding: 9px 10px; border: 1px solid #334153; border-radius: 8px; background: #111824; }\n.card.recommended { border-color: #68c7aa; background: #1a302c; }\n.card .row { align-items: flex-start; }\n.card strong { flex: 1; font-size: 12px; overflow-wrap: anywhere; }\n.card small { display: block; color: #9eb0c5; font-size: 10px; margin-top: 4px; }\n.card button { font-size: 11px; padding: 3px 7px; }\n.reason { color: #8ad6bf; font-size: 10px; margin-top: 5px; line-height: 1.6; }\ndetails summary { cursor: pointer; font-size: 12px; color: #c2cfdf; }\ndetails label { display: block; margin-top: 12px; }\ndetails select, details input { margin-top: 5px; }\n.log { margin: 9px 0; max-height: 150px; overflow: auto; }\n.log p { margin: 0 0 8px; color: #bcc9db; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }\n.log time { color: #768ba6; margin-right: 6px; }\n.message { color: #ffcb8a; font-size: 11px; min-height: 0; line-height: 1.6; margin-top: 6px; }\n.profile-editor { padding: 10px 0 0; }\n.profile-editor .row + .row { margin-top: 8px; }\nfooter { font-size: 10px; color: #7e91ab; margin-top: 14px; line-height: 1.7; }\n@media (max-width: 600px) { .panel { right: 12px; top: 12px; max-height: calc(100dvh - 24px); } }\n';
+  var panel_default = ':host { all: initial; color-scheme: dark; font-family: "Segoe UI", "Microsoft JhengHei", sans-serif; font-size: 13px; color: #e9edf5; }\n* { box-sizing: border-box; }\nbutton, input, select { font: inherit; }\nbutton { cursor: pointer; }\nbutton:disabled { cursor: default; opacity: .4; }\nbutton:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid #6bd5b7; outline-offset: 2px; }\n.launcher { position: fixed; right: 18px; top: 18px; padding: 11px 15px; color: #d9fff3; background: #182b2b; border: 1px solid #4c7b71; border-radius: 12px; box-shadow: 0 8px 30px #0006; }\n.launcher.active::before { content: "\u25CF "; color: #6bdfb5; }\n.panel { position: fixed; right: 18px; top: 18px; width: 350px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 36px); overflow: auto; background: #151c27; border: 1px solid #334153; border-radius: 16px; box-shadow: 0 16px 64px #0009; }\n[hidden] { display: none !important; }\nheader { display: flex; align-items: center; padding: 17px 18px 13px; gap: 10px; border-bottom: 1px solid #2b3544; }\n.logo { color: #77dbbb; border: 1px solid #527a72; border-radius: 8px; padding: 6px; font-size: 18px; }\nheader strong { display: block; font-size: 16px; letter-spacing: .5px; }\nheader small { color: #99a7bc; font-size: 11px; }\nheader .icon { margin-left: auto; }\nbutton { color: #dce5f4; background: #253043; border: 1px solid #3b4a60; border-radius: 7px; padding: 7px 10px; }\nbutton:hover:not(:disabled) { background: #334158; }\n.icon { min-width: 28px; padding: 5px 7px; }\n.body { padding: 14px 16px 16px; }\n.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }\n#automation { margin-bottom: 12px; }\n#automation .toolbar { margin-bottom: 8px; }\n#automation .toolbar strong { font-size: 14px; }\n#pause-all { padding: 4px 9px; font-size: 11px; }\n.checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 8px; }\n.checks label { display: flex; align-items: center; gap: 6px; min-height: 27px; cursor: pointer; font-size: 12px; line-height: 1.4; }\n.checks input { flex: none; width: 15px; height: 15px; padding: 0; margin: 0; accent-color: #77dbbb; cursor: pointer; }\n.run-checks { grid-template-columns: repeat(3, minmax(0, 1fr)); }\n.run-checks label { color: #e2ede9; font-weight: 600; }\n.pick-rules { min-width: 0; margin: 11px 0 0; padding: 5px 0 0; border: 0; border-top: 1px solid #334153; }\n.pick-rules legend { padding: 0 7px 0 0; color: #a4b5c9; font-size: 11px; }\n.mode { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #91a3bc; }\n.mode.on { color: #77dbbb; }\n.status { margin: 10px 0 5px; line-height: 1.7; font-size: 12px; color: #d6e4f3; min-height: 21px; }\n.note, .empty { color: #96a5ba; font-size: 11px; line-height: 1.7; }\n.timer { color: #ffc280; font-size: 11px; line-height: 1.7; }\n.section { margin-top: 16px; padding-top: 14px; border-top: 1px solid #2b3544; }\n.label { display: block; color: #c2cfdf; font-size: 12px; font-weight: 600; margin-bottom: 8px; }\n.row { display: flex; align-items: center; gap: 6px; }\ninput, select { min-width: 0; width: 100%; color: #e8edf6; background: #0f1520; border: 1px solid #344154; border-radius: 7px; padding: 8px; }\ninput::placeholder { color: #7f90a8; }\n.row input, .row select { flex: 1; }\n.row button { flex-shrink: 0; }\n.loop-actions { margin-top: 10px; flex-wrap: wrap; }\n.loop-actions button { flex: 1; font-size: 11px; }\n.kind-tabs { display: flex; gap: 6px; margin-top: 12px; }\n.kind-tabs button { flex: 1; font-size: 12px; }\n.kind-tabs button[aria-pressed="true"] { color: #9fe8d1; border-color: #538c7b; background: #213d35; }\n.delay-range { align-items: flex-end; }\n.roll-rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }\n.roll-rules label { margin: 0; font-size: 12px; color: #c2cfdf; }\n.delay-range label { flex: 1; min-width: 0; font-size: 11px; color: #96a5ba; margin-top: 5px; }\n.delay-range > span { padding-bottom: 8px; color: #96a5ba; }\nol { margin: 10px 0; padding: 0; list-style: none; max-height: 220px; overflow: auto; }\n.priority { display: grid; grid-template-columns: 20px minmax(0, 1fr) repeat(3, auto); align-items: center; gap: 5px 6px; padding: 7px 0; border-bottom: 1px solid #252f3e; }\n.item-rules { grid-column: 2 / -1; grid-row: 2; display: flex; flex-wrap: wrap; gap: 6px; }\n.rank { color: #77dbbb; width: 20px; font-variant-numeric: tabular-nums; text-align: center; flex-shrink: 0; }\n.rule-toggle { font-size: 11px; padding: 4px; flex-shrink: 0; }\n.rule-toggle.focus[aria-pressed="true"] { color: #b3f8df; background: #274c40; border-color: #77bda7; }\n.rule-toggle.banish[aria-pressed="true"] { color: #ffd0b8; background: #59392e; border-color: #bd8b70; }\n.rule-toggle.highQuality[aria-pressed="true"] { color: #ead8ff; background: #40304f; border-color: #af87cf; }\n.name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }\n.priority .icon { font-size: 11px; min-width: 25px; padding: 4px; }\n.priority[draggable="true"] { cursor: grab; }\n.priority.drag-over { background: #284139; }\n.current { display: grid; gap: 7px; }\n.card { padding: 9px 10px; border: 1px solid #334153; border-radius: 8px; background: #111824; }\n.card.recommended { border-color: #68c7aa; background: #1a302c; }\n.card .row { align-items: flex-start; }\n.card strong { flex: 1; font-size: 12px; overflow-wrap: anywhere; }\n.card small { display: block; color: #9eb0c5; font-size: 10px; margin-top: 4px; }\n.card button { font-size: 11px; padding: 3px 7px; }\n.reason { color: #8ad6bf; font-size: 10px; margin-top: 5px; line-height: 1.6; }\ndetails summary { cursor: pointer; font-size: 12px; color: #c2cfdf; }\ndetails label { display: block; margin-top: 12px; }\ndetails select, details input { margin-top: 5px; }\n.log { margin: 9px 0; max-height: 150px; overflow: auto; }\n.log p { margin: 0 0 8px; color: #bcc9db; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }\n.log time { color: #768ba6; margin-right: 6px; }\n.message { color: #ffcb8a; font-size: 11px; min-height: 0; line-height: 1.6; margin-top: 6px; }\n.profile-editor { padding: 10px 0 0; }\n.profile-editor .row + .row { margin-top: 8px; }\nfooter { font-size: 10px; color: #7e91ab; margin-top: 14px; line-height: 1.7; }\n@media (max-width: 600px) { .panel { right: 12px; top: 12px; max-height: calc(100dvh - 24px); } }\n';
 
   // src/run-adapter.ts
   var byId = (id) => document.getElementById(id);
@@ -851,7 +862,11 @@
     if (visible(byId("drop-reveal"))) return { kind: "loot", root: byId("drop-reveal"), label: "\u6389\u843D\u63D0\u793A" };
     for (const [id, kind] of [["loading", "loading"], ["npc-dialog", "dialog"], ["gameover", "settlement"], ["stages", "stages"]]) {
       const root = byId(id);
-      if (visible(root)) return { kind, root, label: root.querySelector(".ro-title")?.textContent?.trim() ?? "" };
+      if (!visible(root)) continue;
+      if (kind === "dialog" && root.querySelector("#npc-text .lb-pick") && labels(["\u9078\u64C7\u5927\u5EF3", "Choose a lobby", "Elige un lobby", "Escolha um lobby"], root.querySelector("#npc-name")?.textContent ?? "")) {
+        return { kind: "lobbyChoice", root, label: "\u9078\u64C7\u5927\u5EF3" };
+      }
+      return { kind, root, label: root.querySelector(".ro-title")?.textContent?.trim() ?? "" };
     }
     if (document.body.classList.contains("in-lobby") && visible(byId("lobby-ui"))) return { kind: "lobby", root: byId("lobby-ui"), label: "\u57CE\u93AE" };
     if (!document.body.classList.contains("in-lobby") && visible(byId("hud"))) return { kind: "battle", root: byId("hud"), label: "\u6230\u9B25" };
@@ -884,6 +899,10 @@
   function departureButton() {
     return usableButton("stg-go");
   }
+  function offlinePlayButton(dialog) {
+    const buttons = [...dialog?.querySelectorAll("#npc-options > button") ?? []].filter((button) => visible(button) && !button.disabled && button.getAttribute("aria-disabled") !== "true" && labels(["\u96E2\u7DDA\u904A\u73A9", "Play offline", "Jugar sin conexi\xF3n", "Jogar sem conex\xE3o"], button.textContent ?? ""));
+    return buttons.length === 1 ? buttons[0] : null;
+  }
   function usableButton(id) {
     const element = byId(id);
     return element instanceof HTMLButtonElement && visible(element) && !element.disabled && element.getAttribute("aria-disabled") !== "true" ? element : null;
@@ -912,7 +931,7 @@
 .panel,.launcher { pointer-events:auto; }</style>
       <button class="launcher" id="launcher" aria-label="\u958B\u555F RO \u9078\u724C\u52A9\u624B">\u2667 \u9078\u724C\u52A9\u624B</button>
       <section class="panel" id="panel" aria-label="RO \u9078\u724C\u52A9\u624B" hidden>
-        <header><span class="logo" aria-hidden="true">\u2667</span><div><strong>RO \u9078\u724C\u52A9\u624B</strong><small>\u4F60\u7684\u6E05\u55AE\uFF0C\u4F60\u7684\u6253\u6CD5 \xB7 v0.7.2</small></div><button class="icon" id="collapse" aria-label="\u6536\u5408\u9762\u677F">\u2212</button></header>
+        <header><span class="logo" aria-hidden="true">\u2667</span><div><strong>RO \u9078\u724C\u52A9\u624B</strong><small>\u4F60\u7684\u6E05\u55AE\uFF0C\u4F60\u7684\u6253\u6CD5 \xB7 v0.8.1</small></div><button class="icon" id="collapse" aria-label="\u6536\u5408\u9762\u677F">\u2212</button></header>
         <div class="body">
           <section id="automation" aria-labelledby="automation-title">
             <div class="toolbar"><strong id="automation-title">\u81EA\u52D5\u529F\u80FD</strong><button id="pause-all" disabled>\u5168\u90E8\u66AB\u505C</button></div>
@@ -952,7 +971,7 @@
               <label>\u6B65\u4F10\u9593\u9694\uFF08\u79D2\uFF09<input id="walk-interval" type="number" min="${minWalkIntervalMs / 1e3}" step="0.001" required></label>
             </div>
             <div id="walk-input-error" class="message" role="status"></div>
-            <p class="note">\u624B\u52D5\u79FB\u52D5\u6642\u66AB\u505C\u3002\u653E\u958B\u64CD\u4F5C 10 \u79D2\u5F8C\uFF0C\u4EE5\u89D2\u8272\u7576\u4E0B\u7684\u4F4D\u7F6E\u70BA\u4E2D\u5FC3\u7E7C\u7E8C\u8D70\u52D5\u3002</p>
+            <p class="note">\u53EF\u5728\u57CE\u93AE\u5148\u52FE\u9078\u3002\u9032\u5165\u6230\u9B25\u5F8C\u958B\u59CB\u8D70\u52D5\uFF0C\u7D50\u7B97\u56DE\u57CE\u5F8C\u5F85\u547D\uFF0C\u4E0B\u4E00\u5834\u81EA\u52D5\u63A5\u7E8C\u3002\u624B\u52D5\u79FB\u52D5\u6642\u66AB\u505C\uFF0C\u653E\u958B\u64CD\u4F5C 10 \u79D2\u5F8C\u4EE5\u7576\u4E0B\u4F4D\u7F6E\u70BA\u4E2D\u5FC3\u7E7C\u7E8C\u8D70\u52D5\u3002</p>
           </details>
           <details class="section" id="loop-settings"><summary>\u5FAA\u74B0\u5237\u95DC \xB7 \u9060\u5F81\u968A\u9577</summary>
             <label class="label" for="loop-stage">\u5FAA\u74B0\u95DC\u5361</label>
@@ -961,7 +980,7 @@
             <div class="row loop-actions"><button id="loop-capture">\u4F7F\u7528\u76EE\u524D\u95DC\u5361</button></div>
             <p class="note" id="loop-count">\u672C\u5206\u9801\u5DF2\u7D50\u7B97 0 \u5834</p>
             <p class="note">\u53EF\u5728\u95DC\u5361\u9078\u55AE\u6216\u6230\u9B25\u4E2D\u8B80\u53D6\u540D\u7A31\uFF1B\u958B\u555F\u968A\u9577\u9078\u55AE\u5F8C\u4E5F\u53EF\u5F9E\u8F38\u5165\u6846\u9078\u95DC\u3002\u6CBF\u7528\u904A\u6232\u76EE\u524D\u96E3\u5EA6\uFF0C\u52DD\u5229\u6216\u6B7B\u4EA1\u7D50\u7B97\u5F8C\u7B49 2.5 \u79D2\u56DE\u57CE\uFF0C\u518D\u6B21\u51FA\u767C\u3002\u555F\u7528\u5FAA\u74B0\u6703\u4E00\u4F75\u555F\u7528\u81EA\u52D5\u9078\u724C\u3002</p>
-            <p class="note">\u56DE\u57CE\u51FA\u751F\u9EDE\u53EF\u76F4\u63A5\u8207\u968A\u9577\u4EA4\u8AC7\uFF1B\u82E5\u5DF2\u8D70\u9060\uFF0C\u8ACB\u5148\u9760\u8FD1\u968A\u9577\u3002\u652F\u63F4\u55AE\u4EBA\u4E00\u822C\u95DC\u5361\uFF1B\u5287\u60C5\u3001\u7D44\u968A\u8207\u5176\u4ED6\u5C0D\u8A71\u6703\u66AB\u505C\u3002\u5206\u9801\u9700\u7559\u5728\u524D\u666F\u3002</p>
+            <p class="note">\u56DE\u57CE\u82E5\u51FA\u73FE\u300C\u9078\u64C7\u5927\u5EF3\u300D\uFF0C\u6703\u6309\u300C\u96E2\u7DDA\u904A\u73A9\u300D\u518D\u627E\u968A\u9577\u3002\u82E5\u5DF2\u96E2\u958B\u51FA\u751F\u9EDE\uFF0C\u8ACB\u5148\u9760\u8FD1\u968A\u9577\u3002\u652F\u63F4\u55AE\u4EBA\u4E00\u822C\u95DC\u5361\uFF0C\u5206\u9801\u9700\u7559\u5728\u524D\u666F\u3002\u9047\u5230\u5287\u60C5\u6216\u7D44\u968A\u5C0D\u8A71\u6703\u66AB\u505C\u3002</p>
             <details><summary>\u6700\u8FD1\u5FAA\u74B0\u7D00\u9304</summary><div id="loop-logs" class="log"></div></details>
           </details>
           <div class="section">
@@ -1213,13 +1232,14 @@
       this.input("delay-max").value = String(this.settings.delayMaxMs);
       if (this.shadow.activeElement !== this.input("loop-stage")) this.input("loop-stage").value = this.settings.loopStageName;
       for (const kind of ["levelup", "chest"]) this.el(`kind-${kind}`).setAttribute("aria-pressed", String(kind === this.editingKind));
-      this.el("priority-help").textContent = this.editingKind === "chest" ? "\u6E05\u55AE\u5167\u5148\u9078\u54C1\u8CEA\u6700\u9AD8\u7684\u9053\u5177\uFF0C\u54C1\u8CEA\u76F8\u540C\u624D\u4F9D\u9806\u4F4D\u3002\u62D6\u66F3\u6216\u4F7F\u7528 \u2191 \u2193 \u6392\u5E8F\u3002" : this.settings.preferNewSkills ? "\u6E05\u55AE\u5167\u6A58\u8272\u512A\u5148 \u2192 \u5C1A\u672A\u53D6\u5F97 \u2192 \u539F\u9806\u4F4D\u3002\u540C\u985E\u5019\u9078\u7531\u4E0A\u5230\u4E0B\u512A\u5148\u3002" : "\u7531\u4E0A\u5230\u4E0B\u4F9D\u5E8F\u512A\u5148\u3002\u62D6\u66F3\u6216\u4F7F\u7528 \u2191 \u2193 \u6392\u5E8F\u3002";
+      const rules = this.profile().rules[this.editingKind];
+      const usualOrder = this.editingKind === "chest" ? "\u6E05\u55AE\u5167\u5148\u9078\u54C1\u8CEA\u6700\u9AD8\u7684\u9053\u5177\uFF0C\u54C1\u8CEA\u76F8\u540C\u624D\u4F9D\u9806\u4F4D\u3002\u62D6\u66F3\u6216\u4F7F\u7528 \u2191 \u2193 \u6392\u5E8F\u3002" : this.settings.preferNewSkills ? "\u6E05\u55AE\u5167\u6A58\u8272\u512A\u5148 \u2192 \u5C1A\u672A\u53D6\u5F97 \u2192 \u539F\u9806\u4F4D\u3002\u540C\u985E\u5019\u9078\u7531\u4E0A\u5230\u4E0B\u512A\u5148\u3002" : "\u7531\u4E0A\u5230\u4E0B\u4F9D\u5E8F\u512A\u5148\u3002\u62D6\u66F3\u6216\u4F7F\u7528 \u2191 \u2193 \u6392\u5E8F\u3002";
+      this.el("priority-help").textContent = rules.highQuality.length ? `\u512A\u5148\u9078\u6A19\u8A18\u70BA\u300C\u9AD8\u54C1\u8CEA\u512A\u5148\u300D\u7684\u7D2B\u8272\u4EE5\u4E0A\u5361\u724C\uFF0C\u591A\u5F35\u6642\u5148\u6BD4\u54C1\u8CEA\uFF0C\u518D\u6BD4\u6E05\u55AE\u9806\u4F4D\u3002\u5176\u9918\u60C5\u6CC1\uFF1A${usualOrder}` : usualOrder;
       this.el("empty-priorities").textContent = this.editingKind === "chest" ? "\u5C1A\u672A\u8A2D\u5B9A\u5BF6\u7BB1\u9806\u4F4D\u3002\u53EF\u5F9E\u76EE\u524D\u5BF6\u7BB1\u52A0\u5165\uFF0C\u6216\u5728\u4E0A\u65B9\u52FE\u9078\u300C\u5BF6\u7BB1\u672A\u547D\u4E2D\u9078\u6700\u9AD8\u7A00\u6709\u5EA6\u300D\u3002" : "\u9084\u6C92\u6709\u512A\u5148\u6280\u80FD\u3002\u8F38\u5165\u904A\u6232\u986F\u793A\u7684\u540D\u7A31\uFF0C\u6216\u5F9E\u4E0B\u65B9\u76EE\u524D\u9078\u724C\u52A0\u5165\u3002";
       const names = this.names();
       this.el("empty-priorities").hidden = names.length > 0;
       const list = this.el("priorities");
       list.replaceChildren();
-      const rules = this.profile().rules[this.editingKind];
       names.forEach((name, index) => {
         const item = document.createElement("li");
         item.className = "priority";
@@ -1231,22 +1251,28 @@
         label.className = "name";
         label.textContent = name;
         item.append(rank, label);
-        for (const [key, title] of [["focus", "\u5C08\u6CE8"], ["banish", "\u53D6\u5F97\u5F8C\u653E\u9010"]]) {
+        const toggles = document.createElement("div");
+        toggles.className = "item-rules";
+        for (const [key, title] of [["focus", "\u5C08\u6CE8"], ["banish", "\u53D6\u5F97\u5F8C\u653E\u9010"], ["highQuality", "\u9AD8\u54C1\u8CEA\u512A\u5148"]]) {
           const toggle = document.createElement("button");
           toggle.className = `rule-toggle ${key}`;
           toggle.textContent = title;
+          if (key === "highQuality") toggle.title = "\u9019\u9805\u51FA\u73FE\u7D2B\u8272\uFF08\u53F2\u8A69\uFF09\u4EE5\u4E0A\u54C1\u8CEA\u6642\u512A\u5148\u9078\u53D6";
           toggle.setAttribute("aria-label", `${title} ${name}`);
           const active = rules[key].includes(name);
           toggle.setAttribute("aria-pressed", String(active));
           toggle.addEventListener("click", () => {
-            rules.focus = rules.focus.filter((value) => value !== name);
-            rules.banish = rules.banish.filter((value) => value !== name);
-            if (!active) rules[key].push(name);
+            rules[key] = active ? rules[key].filter((value) => value !== name) : [...rules[key], name];
+            if (!active && key !== "highQuality") {
+              const other = key === "focus" ? "banish" : "focus";
+              rules[other] = rules[other].filter((value) => value !== name);
+            }
             this.commit();
             this.el("priorities").querySelectorAll(".priority")[index]?.querySelector(`.${key}`)?.focus();
           });
-          item.append(toggle);
+          toggles.append(toggle);
         }
+        item.append(toggles);
         for (const [symbol, title, target] of [["\u2191", "\u4E0A\u79FB", index - 1], ["\u2193", "\u4E0B\u79FB", index + 1], ["\xD7", "\u79FB\u9664", -1]]) {
           const button = document.createElement("button");
           button.className = "icon";
@@ -1261,6 +1287,7 @@
             names.splice(index, 1);
             rules.focus = rules.focus.filter((value) => value !== name);
             rules.banish = rules.banish.filter((value) => value !== name);
+            rules.highQuality = rules.highQuality.filter((value) => value !== name);
             this.commit();
           });
           item.append(button);
@@ -1310,12 +1337,12 @@
       }
       this.el("status").textContent = state.status;
       const running = state.enabled || this.walking || !!this.loopState?.enabled;
-      this.el("mode").textContent = running ? "AUTO / \u81EA\u52D5\u57F7\u884C\u4E2D" : "PREVIEW / \u9810\u89BD";
+      this.el("mode").textContent = running ? "AUTO / \u81EA\u52D5\u529F\u80FD\u5DF2\u555F\u7528" : "PREVIEW / \u9810\u89BD";
       this.el("mode").classList.toggle("on", running);
       this.input("toggle").checked = state.enabled;
       this.el("pause-all").disabled = !running;
       this.el("launcher").classList.toggle("active", state.enabled || this.walking);
-      this.el("launcher").textContent = this.loopState?.enabled ? "\u9078\u724C\u52A9\u624B \xB7 \u5FAA\u74B0\u4E2D" : this.walking ? "\u9078\u724C\u52A9\u624B \xB7 \u8D70\u52D5\u4E2D" : state.enabled ? "\u9078\u724C\u52A9\u624B \xB7 \u81EA\u52D5" : "\u2667 \u9078\u724C\u52A9\u624B";
+      this.el("launcher").textContent = this.loopState?.enabled ? "\u9078\u724C\u52A9\u624B \xB7 \u5FAA\u74B0\u4E2D" : this.walking ? "\u9078\u724C\u52A9\u624B \xB7 \u8D70\u52D5\u5DF2\u52FE\u9078" : state.enabled ? "\u9078\u724C\u52A9\u624B \xB7 \u81EA\u52D5" : "\u2667 \u9078\u724C\u52A9\u624B";
       this.el("timer").textContent = state.snapshot?.timer ? `${state.snapshot.timer} \xB7 \u904A\u6232\u5012\u6578\u4ECD\u6703\u7E7C\u7E8C\uFF0C\u903E\u6642\u53EF\u80FD\u81EA\u884C\u9078\u724C\u3002` : "";
       const key = JSON.stringify([state.snapshot?.signature, state.snapshot?.closing, state.recommendation, this.profile().priorities, this.profile().chestPriorities]);
       if (key !== this.currentKey) {
@@ -1438,7 +1465,7 @@
         this.tick();
       });
       document.addEventListener("click", (event) => {
-        if (this.state.enabled && event.isTrusted && event.target instanceof Element && event.target.closest("#stages button, #npc-options button, #btn-restart, #lobby-prompt, #lobby-switch")) {
+        if (this.state.enabled && event.isTrusted && event.target instanceof Element && event.target.closest("#stages button, #npc-options button, #npc-text .lb-pick button, #btn-restart, #lobby-prompt, #lobby-switch")) {
           this.stop("\u5DF2\u4EA4\u7531\u4F60\u64CD\u4F5C\uFF0C\u5FAA\u74B0\u5DF2\u66AB\u505C");
         }
       }, true);
@@ -1446,7 +1473,7 @@
         if (this.state.enabled && event.isTrusted && event.target instanceof Element && event.target.closest("#npc-text .diff input")) this.stop("\u5DF2\u4EA4\u7531\u4F60\u8ABF\u6574\u96E3\u5EA6\uFF0C\u5FAA\u74B0\u5DF2\u66AB\u505C");
       }, true);
       document.addEventListener("keydown", (event) => {
-        if (this.state.enabled && event.isTrusted && ["Escape", "Enter", " "].includes(event.key) && !event.composedPath().some((node) => node instanceof HTMLElement && node.id === "ro-picker-assistant") && ["stages", "dialog", "settlement"].includes(readRunScreen().kind)) this.stop("\u5DF2\u4EA4\u7531\u4F60\u64CD\u4F5C\uFF0C\u5FAA\u74B0\u5DF2\u66AB\u505C");
+        if (this.state.enabled && event.isTrusted && ["Escape", "Enter", " "].includes(event.key) && !event.composedPath().some((node) => node instanceof HTMLElement && node.id === "ro-picker-assistant") && ["stages", "dialog", "lobbyChoice", "settlement"].includes(readRunScreen().kind)) this.stop("\u5DF2\u4EA4\u7531\u4F60\u64CD\u4F5C\uFF0C\u5FAA\u74B0\u5DF2\u66AB\u505C");
       }, true);
     }
     subscribe(listener) {
@@ -1494,6 +1521,7 @@
     }
     acknowledged(screen) {
       switch (this.attempt?.expected) {
+        case "returned":
         case "lobby":
           return screen.kind === "lobby";
         case "stages":
@@ -1525,7 +1553,7 @@
         return;
       }
       this.candidate = null;
-      this.attempt = { expected, at: performance.now(), timeout: expected === "battle" || expected === "lobby" ? 9e4 : 8e3, label };
+      this.attempt = { key, expected, at: performance.now(), timeout: ["battle", "returned", "lobby"].includes(expected) ? 9e4 : 8e3, label };
       this.log(label);
       this.status(`\u7B49\u5F85\u904A\u6232\u78BA\u8A8D\uFF1A${label}`);
       button.click();
@@ -1548,9 +1576,17 @@
         this.wait("loot", "\u7B49\u5F85\u6389\u843D\u63D0\u793A\u95DC\u9589", 9e4);
         return;
       }
+      if (screen.kind === "lobbyChoice" && this.attempt?.key !== "offline") {
+        const button = offlinePlayButton(screen.root);
+        if (button) {
+          const expected = this.attempt?.expected === "returned" ? "returned" : "lobby";
+          this.click("offline", button, "\u9078\u64C7\u96E2\u7DDA\u904A\u73A9", expected);
+        } else this.wait("offline", "\u7B49\u5F85\u300C\u96E2\u7DDA\u904A\u73A9\u300D\u6309\u9215\u5C31\u7DD2");
+        return;
+      }
       if (this.attempt) {
         if (this.acknowledged(screen)) {
-          if (this.attempt.expected === "lobby") {
+          if (this.attempt.expected === "returned") {
             this.state.completed++;
             this.log(`\u5DF2\u7D50\u7B97 ${this.state.completed} \u5834\uFF0C\u56DE\u5230\u57CE\u93AE`);
           }
@@ -1583,7 +1619,7 @@
       }
       if (screen.kind === "settlement") {
         const button = usableButton("btn-restart");
-        if (button) this.click("return", button, "\u5B8C\u6210\u7D50\u7B97\u4E26\u56DE\u57CE", "lobby", 2500);
+        if (button) this.click("return", button, "\u5B8C\u6210\u7D50\u7B97\u4E26\u56DE\u57CE", "returned", 2500);
         else this.wait("settlement", "\u7B49\u5F85\u7D50\u7B97\u6309\u9215\u5C31\u7DD2");
         return;
       }
@@ -1700,7 +1736,7 @@
     held = null;
     releaseTimer;
     watchFrame = 0;
-    interval;
+    timer;
     manualKeys = /* @__PURE__ */ new Set();
     manualPointers = /* @__PURE__ */ new Set();
     resumeAt = null;
@@ -1718,24 +1754,16 @@
     }
     start() {
       if (this.enabled) return;
-      if (this.manualHeld || readRunScreen().kind !== "battle" || this.blocked()) {
-        this.setStatus("\u8ACB\u5728\u6230\u9B25\u756B\u9762\u653E\u958B\u79FB\u52D5\u9375\u5F8C\u555F\u7528");
-        return;
-      }
-      this.origin = minimapPosition();
-      if (!this.origin) {
-        this.setStatus("\u8ACB\u5148\u5728\u6230\u9B25\u4E2D\u986F\u793A\u5C0F\u5730\u5716\u5EA7\u6A19");
-        return;
-      }
       this.enabled = true;
-      this.newExcursion();
-      this.nextStep = performance.now() + this.settings.walkIntervalMs;
-      this.setStatus("\u5DF2\u8A18\u4F4F\u8D77\u9EDE\uFF0C\u7B49\u5F85\u4E0B\u4E00\u6B65");
-      this.interval = setInterval(() => this.tick(), 80);
+      this.poll();
+    }
+    poll() {
+      this.tick();
+      if (this.enabled) this.timer = setTimeout(() => this.poll(), this.origin ? 80 : 500);
     }
     stop(message = "\u8D70\u52D5\u5DF2\u505C\u6B62") {
       this.release();
-      clearInterval(this.interval);
+      clearTimeout(this.timer);
       this.origin = null;
       this.resumeAt = null;
       this.enabled = false;
@@ -1779,14 +1807,13 @@
       this.bestReturnDistance = Infinity;
     }
     tick() {
-      if (!this.origin) return;
       const screen = readRunScreen();
-      if (["settlement", "lobby", "stages", "loading"].includes(screen.kind)) {
-        this.stop("\u5DF2\u96E2\u958B\u6230\u9B25\uFF0C\u8D70\u52D5\u5DF2\u505C\u6B62");
-        return;
+      if (["settlement", "lobby", "lobbyChoice", "stages", "loading"].includes(screen.kind) || document.body.classList.contains("in-lobby")) {
+        this.origin = null;
+        this.resumeAt = null;
       }
       if (screen.kind !== "battle" || this.blocked()) {
-        this.rest();
+        this.rest(this.origin ? "\u8D70\u52D5\u66AB\u505C \xB7 \u8FD4\u56DE\u6230\u9B25\u5F8C\u7E7C\u7E8C" : "\u8D70\u52D5\u5F85\u547D \xB7 \u9032\u5165\u6230\u9B25\u5F8C\u958B\u59CB");
         return;
       }
       const pos = minimapPosition();
@@ -1794,15 +1821,15 @@
         this.rest("\u8D70\u52D5\u66AB\u505C \xB7 \u7B49\u5F85\u5C0F\u5730\u5716\u5EA7\u6A19");
         return;
       }
-      if (pos.area !== this.origin.area) {
-        this.stop("\u5DF2\u96E2\u958B\u539F\u5340\u57DF\uFF0C\u8D70\u52D5\u5DF2\u505C\u6B62");
+      if (this.origin && pos.area !== this.origin.area) {
+        this.rest("\u8D70\u52D5\u66AB\u505C \xB7 \u7B49\u5F85\u56DE\u5230\u672C\u5834\u8D77\u9EDE\u6240\u5728\u5340\u57DF");
+        return;
+      }
+      if (this.manualHeld) {
+        this.setStatus("\u624B\u52D5\u79FB\u52D5\u4E2D \xB7 \u653E\u958B\u5F8C 10 \u79D2\u6062\u5FA9\u8D70\u52D5");
         return;
       }
       if (this.resumeAt !== null) {
-        if (this.manualHeld) {
-          this.setStatus("\u624B\u52D5\u79FB\u52D5\u4E2D \xB7 \u653E\u958B\u5F8C 10 \u79D2\u6062\u5FA9\u8D70\u52D5");
-          return;
-        }
         const remaining = this.resumeAt - performance.now();
         if (remaining > 0) {
           this.setStatus(`\u624B\u52D5\u79FB\u52D5\u5DF2\u7D50\u675F \xB7 ${Math.ceil(remaining / 1e3)} \u79D2\u5F8C\u6062\u5FA9\u8D70\u52D5`);
@@ -1812,6 +1839,12 @@
         this.newExcursion();
         this.nextStep = 0;
         this.resumeAt = null;
+      } else if (!this.origin) {
+        this.origin = pos;
+        this.newExcursion();
+        this.nextStep = performance.now() + this.settings.walkIntervalMs;
+        this.setStatus("\u5DF2\u8A18\u4F4F\u672C\u5834\u8D77\u9EDE\uFF0C\u7B49\u5F85\u4E0B\u4E00\u6B65");
+        return;
       }
       const away = distance(this.origin.point, pos.point);
       if (away > this.settings.walkRadius) {

@@ -14,7 +14,7 @@
   document.body.append(root);
   const el = id => document.getElementById(id);
   const flow = window.runFixture = {
-    actions: [], selected: '普隆德拉原野', departure: '', reject: '', dialog: '',
+    actions: [], selected: '普隆德拉原野', departure: '', reject: '', dialog: '', chooseLobbyOnReturn: false,
     stages: [{ name: '普隆德拉原野', available: true }, { name: '斐揚森林', available: true }, { name: '未解鎖關卡', available: false }, { name: '故事關卡', available: true, story: true }],
     difficulty: { count: 2, damage: 1.25, hp: 1.5, speed: 1.1, events: 1.75 },
     screen(id) {
@@ -24,6 +24,16 @@
     battle() { el('minimap-name').textContent = flow.departure || '斐揚森林'; flow.screen('hud'); },
     settle(win = true) { flow.screen('gameover'); el('go-title').textContent = win ? '你存活下來了！' : '你死了'; },
     lobby() { flow.screen('lobby-ui'); },
+    openLobbyChoice() {
+      flow.lobby();
+      el('npc-dialog').classList.remove('hidden');
+      el('npc-name').textContent = '選擇大廳';
+      el('npc-text').innerHTML = '<div class="lb-pick"><button data-lb="1">阿斯嘉特</button></div>';
+      el('npc-text').querySelector('button').onclick = () => { flow.actions.push('online'); flow.lobby(); };
+      const button = document.createElement('button'); button.textContent = '離線遊玩';
+      button.onclick = () => { flow.actions.push('offline'); if (flow.reject !== 'offline') flow.lobby(); };
+      el('npc-options').replaceChildren(button);
+    },
     openStages() {
       flow.screen('stages');
       el('stg-list').replaceChildren(...flow.stages.map(stage => {
@@ -55,6 +65,6 @@
   el('lobby-prompt').onclick = () => { flow.actions.push('captain'); if (flow.reject !== 'captain') flow.openStages(); };
   el('stg-go').onclick = () => { flow.actions.push(`depart:${flow.selected}`); flow.departure = flow.selected; if (flow.reject !== 'depart') flow.openDifficulty(); };
   el('stg-story').onclick = () => flow.actions.push('story'); el('stg-skip').onclick = () => flow.actions.push('skip');
-  el('btn-restart').onclick = () => { flow.actions.push('return'); if (flow.reject !== 'return') { flow.screen('loading'); setTimeout(() => flow.lobby(), 350); } };
+  el('btn-restart').onclick = () => { flow.actions.push('return'); if (flow.reject !== 'return') { flow.screen('loading'); setTimeout(() => flow.chooseLobbyOnReturn ? flow.openLobbyChoice() : flow.lobby(), 350); } };
   flow.battle();
 })();

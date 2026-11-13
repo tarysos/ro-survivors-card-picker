@@ -106,14 +106,14 @@ test('pauses during a picker and on displacement, then resumes inside the origin
   await expect.poll(async () => (await steps(page)).length).toBeGreaterThan(paused.length);
 });
 
-test('a missing minimap cannot start movement; a blocked direction retries and keeps the origin', async ({ page }) => {
+test('walking waits for missing coordinates before moving; a blocked direction retries and keeps the origin', async ({ page }) => {
   await page.evaluate(() => { document.getElementById('minimap-coords')!.textContent = ''; });
   await start(page);
-  await expect(page.locator('#walk-status')).toContainText('顯示小地圖座標');
+  await expect(page.locator('#walk-status')).toContainText('等待小地圖座標');
+  await expect(page.locator('#walk-toggle')).toBeChecked();
   expect(await steps(page)).toEqual([]);
   await page.evaluate(() => { document.getElementById('minimap-coords')!.textContent = '(40, 50)'; (window as any).wall = true; });
   await setNumber(page, 'walk-interval', '0.25');
-  await start(page);
   await expect(page.locator('#walk-status')).toContainText('走動受阻');
   expect(await steps(page)).toHaveLength(8);
   await expect(page.locator('#walk-toggle')).toBeChecked();
@@ -177,7 +177,7 @@ test('custom numbers survive reload; focus in the assistant and missing HUD data
   await expect(page.locator('#walk-interval')).toHaveValue('0.375');
 });
 
-test('background and loot suspend walking, settlement ends it and new battles require a fresh start', async ({ page }) => {
+test('background and loot suspend walking, settlement preserves standby for the next battle', async ({ page }) => {
   const cdp = await page.context().newCDPSession(page);
   let contentWorld: number | undefined;
   cdp.on('Runtime.executionContextCreated', ({ context }) => {
@@ -205,9 +205,36 @@ test('background and loot suspend walking, settlement ends it and new battles re
   await page.locator('#drop-reveal').evaluate(el => el.remove());
   await expect.poll(async () => (await steps(page)).length).toBeGreaterThanOrEqual(2);
   await page.evaluate(() => (window as any).runFixture.settle());
-  await expect(page.locator('#walk-status')).toContainText('離開戰鬥');
+  await expect(page.locator('#walk-status')).toContainText('走動待命');
+  await expect(page.locator('#walk-toggle')).toBeChecked();
   const stopped = await steps(page);
-  await page.evaluate(() => (window as any).runFixture.battle());
+  await page.evaluate(() => (window as any).runFixture.lobby());
   await page.waitForTimeout(1300);
+  expect(await steps(page)).toEqual(stopped);
+  await page.evaluate(() => { (window as any).setWalkPosition(85, 70); (window as any).runFixture.battle(); });
+  await expect.poll(async () => (await steps(page)).length).toBeGreaterThan(stopped.length);
+  await expect(page.locator('#walk-status')).toContainText('起點 (85, 70)');
+});
+
+test('walking armed in town waits through the stage and difficulty menus; cancelling standby prevents later steps', async ({ page }) => {
+  await page.evaluate(() => (window as any).runFixture.lobby());
+  await setNumber(page, 'walk-interval', '0.25');
+  await start(page);
+  await expect(page.locator('#walk-toggle')).toBeChecked();
+  await expect(page.locator('#walk-status')).toContainText('走動待命');
+  await page.waitForTimeout(650);
+  await page.evaluate(() => (window as any).runFixture.openStages());
+  await page.waitForTimeout(650);
+  await page.evaluate(() => (window as any).runFixture.openDifficulty());
+  await page.waitForTimeout(650);
+  expect(await steps(page)).toEqual([]);
+  await page.evaluate(() => (window as any).runFixture.battle());
+  await expect.poll(async () => (await steps(page)).length).toBeGreaterThanOrEqual(2);
+  await page.evaluate(() => (window as any).runFixture.settle(false));
+  await expect(page.locator('#walk-status')).toContainText('走動待命');
+  const stopped = await steps(page);
+  await page.locator('#walk-toggle').uncheck();
+  await page.evaluate(() => (window as any).runFixture.battle());
+  await page.waitForTimeout(1000);
   expect(await steps(page)).toEqual(stopped);
 });

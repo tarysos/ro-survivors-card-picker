@@ -11,10 +11,10 @@ export function validWalkSetting(key: WalkSetting, value: unknown): value is num
 export const normalizeName = (value: string): string => value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase();
 export const emptyProfile = (id: string, name: string): Profile => ({
   id, name, priorities: [], chestPriorities: [],
-  rules: { levelup: { focus: [], banish: [] }, chest: { focus: [], banish: [] } },
+  rules: { levelup: { focus: [], banish: [], highQuality: [] }, chest: { focus: [], banish: [], highQuality: [] } },
 });
 export const defaults = (): Settings => ({
-  version: 7,
+  version: 8,
   profiles: [emptyProfile('default', '我的優先清單')],
   activeProfileId: 'default', fallback: 'pause', delayMinMs: 500, delayMaxMs: 1500,
   chestFallback: 'pause', chestAutoReplace: true,
@@ -40,7 +40,7 @@ function sanitizeRules(raw: Partial<ItemRules> | undefined, names: string[]): It
     return names.filter(name => marked.has(normalizeName(name)));
   };
   const focus = valid(raw?.focus);
-  return { focus, banish: valid(raw?.banish).filter(name => !focus.includes(name)) };
+  return { focus, banish: valid(raw?.banish).filter(name => !focus.includes(name)), highQuality: valid(raw?.highQuality) };
 }
 export function sanitizeSettings(raw: unknown): Settings {
   const base = defaults();
@@ -54,7 +54,7 @@ export function sanitizeSettings(raw: unknown): Settings {
     const chestPriorities = uniqueNames((Array.isArray(p.chestPriorities) ? p.chestPriorities : []).filter((n): n is string => typeof n === 'string').map(n => priorityName(n, 'chest')));
     const levelup = (data.version ?? 0) < 7 && !p.rules
       ? { focus: data.autoFocusFirst !== false ? priorities.slice(0, 1) : [],
-          banish: data.autoBanishLastTwo !== false && priorities.length >= 3 ? priorities.slice(-2) : [] }
+          banish: data.autoBanishLastTwo !== false && priorities.length >= 3 ? priorities.slice(-2) : [], highQuality: [] }
       : sanitizeRules(p.rules?.levelup, priorities);
     return [{ id: p.id.slice(0, 100), name: typeof p.name === 'string' && p.name.trim() ? p.name.trim().slice(0, 60) : '未命名清單',
       priorities, chestPriorities, rules: { levelup, chest: sanitizeRules(p.rules?.chest, chestPriorities) } }];
@@ -90,22 +90,28 @@ export function decideSnapshot(snapshot: Pick<Snapshot, 'kind'> & { cards: Pick<
   if (kind !== 'levelup' && kind !== 'chest') return { index: null, reason: '僅處理升級技能與寶箱道具選牌' };
   const profile = settings.profiles.find(p => p.id === settings.activeProfileId)!;
   const names = kind === 'chest' ? profile.chestPriorities : profile.priorities;
-  const candidates = snapshot.cards.map((card, index) => ({ card, index }))
-    .filter(({ card }) => !isBanishUpgrade(card, profile.rules[kind].banish, kind));
+  const rules = profile.rules[kind];
+  const candidates = snapshot.cards.flatMap((card, index) => isBanishUpgrade(card, rules.banish, kind)
+    ? [] : [{ index, name: priorityName(card.name, kind), rarity: card.rarity, ownership: card.ownership }]);
   if (!candidates.length && snapshot.cards.length) return { index: null, reason: '目前只有已取得的放逐對象，請重抽或手動選擇' };
-  if (kind === 'levelup' && settings.preferNewSkills) {
-    const matched = candidates.filter(({ card }) => names.some(name => normalizeName(name) === normalizeName(card.name)));
-    const orange = matched.filter(({ card }) => card.rarity === 4);
-    const fresh = matched.filter(({ card }) => card.ownership === 'new');
-    const preferred = orange.length ? orange : fresh;
-    if (preferred.length) {
-      const result = decide(preferred.map(({ card }) => card), names, 'pause');
-      return { index: preferred[result.index!].index, reason: `${orange.length ? '清單內橘色（傳說）技能優先' : '優先補齊尚未取得的清單技能'}；${result.reason}` };
-    }
+  const marked = new Set(rules.highQuality.map(normalizeName));
+  const epicOrBetter = candidates.filter(card => card.rarity !== null && card.rarity >= 3 && marked.has(normalizeName(card.name)));
+  let pool = candidates;
+  let order: 'rarity' | 'priority' = kind === 'chest' ? 'rarity' : 'priority';
+  let reason = '';
+  if (epicOrBetter.length) {
+    pool = epicOrBetter;
+    order = 'rarity';
+    reason = '高品質優先（史詩以上）';
+  } else if (kind === 'levelup' && settings.preferNewSkills) {
+    const matched = candidates.filter(card => names.some(name => normalizeName(name) === normalizeName(card.name)));
+    const orange = matched.filter(card => card.rarity === 4);
+    const fresh = matched.filter(card => card.ownership === 'new');
+    if (orange.length) { pool = orange; reason = '清單內橘色（傳說）技能優先'; }
+    else if (fresh.length) { pool = fresh; reason = '優先補齊尚未取得的清單技能'; }
   }
-  const cards = candidates.map(({ card }) => ({ ...card, name: priorityName(card.name, kind) }));
-  const result = decide(cards, names, kind === 'chest' ? settings.chestFallback : settings.fallback, kind === 'chest' ? 'rarity' : 'priority');
-  return { ...result, index: result.index === null ? null : candidates[result.index].index };
+  const result = decide(pool, names, kind === 'chest' ? settings.chestFallback : settings.fallback, order);
+  return { index: result.index === null ? null : pool[result.index].index, reason: reason ? `${reason}；${result.reason}` : result.reason };
 }
 export function planPerk(snapshot: Pick<Snapshot, 'kind' | 'cards' | 'reroll'>, settings: Settings): PerkPlan | null {
   const kind = snapshot.kind;
@@ -165,10 +171,9 @@ const rarityGroups = [
   ['mythic', 'mítico', 'mítica', '神話'],
 ];
 export function readRarity(badge: string, fresh: boolean): number | null {
-  if (fresh) return -1;
   const value = normalizeName(badge);
   const index = rarityGroups.findIndex(group => group.includes(value));
-  return index >= 0 ? index : null;
+  return index >= 0 ? index : fresh ? -1 : null;
 }
 export const minimumDelay = (count: number, requested: number): number => Math.max(requested, 380 + count * 120 + 220);
 export const sampleDelay = (settings: Pick<Settings, 'delayMinMs' | 'delayMaxMs'>, random: () => number = Math.random): number =>

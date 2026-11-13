@@ -52,11 +52,13 @@ input::placeholder { color: #7f90a8; }
 .delay-range label { flex: 1; min-width: 0; font-size: 11px; color: #96a5ba; margin-top: 5px; }
 .delay-range > span { padding-bottom: 8px; color: #96a5ba; }
 ol { margin: 10px 0; padding: 0; list-style: none; max-height: 220px; overflow: auto; }
-.priority { display: flex; align-items: center; gap: 6px; padding: 7px 0; border-bottom: 1px solid #252f3e; }
+.priority { display: grid; grid-template-columns: 20px minmax(0, 1fr) repeat(3, auto); align-items: center; gap: 5px 6px; padding: 7px 0; border-bottom: 1px solid #252f3e; }
+.item-rules { grid-column: 2 / -1; grid-row: 2; display: flex; flex-wrap: wrap; gap: 6px; }
 .rank { color: #77dbbb; width: 20px; font-variant-numeric: tabular-nums; text-align: center; flex-shrink: 0; }
 .rule-toggle { font-size: 11px; padding: 4px; flex-shrink: 0; }
 .rule-toggle.focus[aria-pressed="true"] { color: #b3f8df; background: #274c40; border-color: #77bda7; }
 .rule-toggle.banish[aria-pressed="true"] { color: #ffd0b8; background: #59392e; border-color: #bd8b70; }
+.rule-toggle.highQuality[aria-pressed="true"] { color: #ead8ff; background: #40304f; border-color: #af87cf; }
 .name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
 .priority .icon { font-size: 11px; min-width: 25px; padding: 4px; }
 .priority[draggable="true"] { cursor: grab; }
