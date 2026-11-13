@@ -1,8 +1,9 @@
 import styles from './panel.css';
-import { normalizeName, priorityName, skillRules, uniqueNames } from './core';
+import { emptyProfile, normalizeName, priorityName, uniqueNames } from './core';
 import type { PickKind, Settings, ViewState } from './types';
 import { currentStageName, stageChoices } from './run-adapter';
 import type { LoopState } from './run-loop';
+import { rollCategories, rollCategoryKeys } from './roll-rules';
 
 interface Actions {
   save(settings: Settings): void;
@@ -32,12 +33,20 @@ export class Panel {
       <style>${styles}\n.panel,.launcher { pointer-events:auto; }</style>
       <button class="launcher" id="launcher" aria-label="開啟 RO 選牌助手">♧ 選牌助手</button>
       <section class="panel" id="panel" aria-label="RO 選牌助手" hidden>
-        <header><span class="logo" aria-hidden="true">♧</span><div><strong>RO 選牌助手</strong><small>你的清單，你的打法 · v0.4.0</small></div><button class="icon" id="collapse" aria-label="收合面板">−</button></header>
+        <header><span class="logo" aria-hidden="true">♧</span><div><strong>RO 選牌助手</strong><small>你的清單，你的打法 · v0.6.0</small></div><button class="icon" id="collapse" aria-label="收合面板">−</button></header>
         <div class="body">
           <div class="toolbar"><span class="mode" id="mode">PREVIEW / 預覽</span><button id="toggle" class="primary">啟用自動選牌</button></div>
           <p class="status" id="status" role="status" aria-live="polite"></p>
           <div class="timer" id="timer"></div>
-          <div class="note">自動處理升級技能、寶箱選牌與裝備取得提示。重新整理後回到預覽模式。</div>
+          <div class="note">重新整理後回到預覽模式。</div>
+          <details class="section" id="roll-settings"><summary>組隊分寶</summary>
+            <label class="checkbox-row"><input id="auto-roll-loot" type="checkbox">依種類自動擲骰</label>
+            <p class="note">啟用自動選牌後生效。無法辨識種類的掉落物會套用「其他」。</p>
+            <div class="roll-rules">${rollCategoryKeys.map(key => `
+              <div><label for="roll-${key}">${rollCategories[key]}</label><select id="roll-${key}">
+                <option value="need">Need（需求）</option><option value="greed">Greed（貪婪）</option>
+              </select></div>`).join('')}</div>
+          </details>
           <details class="section" id="loop-settings"><summary>循環刷關 · 遠征隊長</summary>
             <label class="label" for="loop-stage">循環關卡</label>
             <input id="loop-stage" list="loop-stages" maxlength="120" placeholder="輸入遊戲中的完整關卡名稱" autocomplete="off">
@@ -67,9 +76,6 @@ export class Panel {
           <details class="section" id="advanced"><summary>選牌設定</summary>
             <label class="checkbox-row"><input id="prefer-new-skills" type="checkbox">先拿齊清單技能（橘色優先）</label>
             <p class="note">清單內橘色（傳說）牌優先；沒有橘色時先取得新技能，再照順位升級。同類候選仍依順位。不為了補齊技能選入清單外的牌；已取得的放逐對象仍排除。</p>
-            <label class="checkbox-row"><input id="auto-focus" type="checkbox">技能第一順位自動專注</label>
-            <label class="checkbox-row"><input id="auto-banish" type="checkbox">技能最後兩順位：先取得，再放逐</label>
-            <p class="note">技能清單至少 3 項才啟用。最後兩順位尚未取得時仍依順位選入；已取得後，再出現升級牌才放逐、不繼續升級。專注、放逐有剩餘次數才會執行。</p>
             <label class="checkbox-row"><input id="auto-reroll" type="checkbox">技能沒有目標牌時全部重抽</label>
             <label class="checkbox-row"><input id="chest-auto-reroll" type="checkbox">寶箱沒有目標牌時全部重抽</label>
             <p class="note">有設定目標清單才會重抽。重抽次數用完後，依下方未命中規則處理。</p>
@@ -79,8 +85,8 @@ export class Panel {
             <select id="chest-fallback"><option value="pause">交由我手動選擇</option><option value="rarity">選最高稀有度（必須全部辨識成功）</option></select>
             <label class="checkbox-row"><input id="chest-replace" type="checkbox">寶箱自動確認替換</label>
             <p class="note">清單內候選牌先比品質，同品質再比順位；勾選後會確認替換該欄位原有道具。關閉後，需替換的牌交由你處理。</p>
-            <label class="checkbox-row"><input id="auto-collect-loot" type="checkbox">撿到裝備後自動點「取得」</label>
-            <p class="note">啟用自動選牌後生效。等動畫解鎖再關閉裝備提示；不操作組隊擲骰或其他獎勵選擇。</p>
+            <label class="checkbox-row"><input id="auto-collect-loot" type="checkbox">撿到任何物品時自動點「取得」</label>
+            <p class="note">啟用自動選牌後，會等動畫結束再點「取得」。</p>
             <div class="note" style="margin-top:12px">每輪隨機選牌延遲（毫秒）</div>
             <div class="row delay-range"><label for="delay-min">最短<input id="delay-min" type="number" min="500" max="5000" step="100"></label><span>～</span><label for="delay-max">最長<input id="delay-max" type="number" min="500" max="5000" step="100"></label></div>
             <p class="note">預設 500～1500 毫秒，每輪重新抽取一次。若遊戲動畫尚未結束，會等到可操作時才點選。</p>
@@ -117,7 +123,7 @@ export class Panel {
       if (!name) return this.message('請輸入清單名稱。');
       if (this.settings.profiles.length >= 20) return this.message('最多可建立 20 組清單。');
       const id = crypto.randomUUID();
-      this.settings.profiles.push({ id, name, priorities: [], chestPriorities: [] }); this.settings.activeProfileId = id; this.commit();
+      this.settings.profiles.push(emptyProfile(id, name)); this.settings.activeProfileId = id; this.commit();
       this.message('已建立新清單。');
     });
     this.on('rename-profile', 'click', () => {
@@ -141,7 +147,13 @@ export class Panel {
       this.settings.chestFallback = this.select('chest-fallback').value === 'rarity' ? 'rarity' : 'pause'; this.commit();
     });
     this.on('chest-replace', 'change', () => { this.settings.chestAutoReplace = this.input('chest-replace').checked; this.commit(); });
-    for (const [id, key] of [['prefer-new-skills', 'preferNewSkills'], ['auto-collect-loot', 'autoCollectLoot'], ['auto-focus', 'autoFocusFirst'], ['auto-banish', 'autoBanishLastTwo'], ['auto-reroll', 'autoReroll'], ['chest-auto-reroll', 'chestAutoReroll']] as const) {
+    for (const category of rollCategoryKeys) {
+      this.on(`roll-${category}`, 'change', () => {
+        this.settings.rollRules[category] = this.select(`roll-${category}`).value === 'need' ? 'need' : 'greed';
+        this.commit();
+      });
+    }
+    for (const [id, key] of [['prefer-new-skills', 'preferNewSkills'], ['auto-collect-loot', 'autoCollectLoot'], ['auto-roll-loot', 'autoRollLoot'], ['auto-reroll', 'autoReroll'], ['chest-auto-reroll', 'chestAutoReroll']] as const) {
       this.on(id, 'change', () => { this.settings[key] = this.input(id).checked; this.commit(); });
     }
     for (const side of ['min', 'max'] as const) this.on(`delay-${side}`, 'change', () => {
@@ -192,12 +204,12 @@ export class Panel {
     this.select('fallback').value = this.settings.fallback;
     this.select('chest-fallback').value = this.settings.chestFallback;
     this.input('chest-replace').checked = this.settings.chestAutoReplace;
-    this.input('auto-focus').checked = this.settings.autoFocusFirst;
-    this.input('auto-banish').checked = this.settings.autoBanishLastTwo;
     this.input('auto-reroll').checked = this.settings.autoReroll;
     this.input('chest-auto-reroll').checked = this.settings.chestAutoReroll;
     this.input('prefer-new-skills').checked = this.settings.preferNewSkills;
     this.input('auto-collect-loot').checked = this.settings.autoCollectLoot;
+    this.input('auto-roll-loot').checked = this.settings.autoRollLoot;
+    for (const category of rollCategoryKeys) this.select(`roll-${category}`).value = this.settings.rollRules[category];
     this.input('delay-min').value = String(this.settings.delayMinMs);
     this.input('delay-max').value = String(this.settings.delayMaxMs);
     if (this.shadow.activeElement !== this.input('loop-stage')) this.input('loop-stage').value = this.settings.loopStageName;
@@ -209,21 +221,38 @@ export class Panel {
     const names = this.names();
     this.el('empty-priorities').hidden = names.length > 0;
     const list = this.el('priorities'); list.replaceChildren();
-    const rules = skillRules(this.settings);
+    const rules = this.profile().rules[this.editingKind];
     names.forEach((name, index) => {
       const item = document.createElement('li'); item.className = 'priority'; item.draggable = true;
       const rank = document.createElement('span'); rank.className = 'rank'; rank.textContent = String(index + 1);
       const label = document.createElement('span'); label.className = 'name'; label.textContent = name;
       item.append(rank, label);
-      if (this.editingKind === 'levelup') {
-        const role = rules.focus === name ? '專注' : rules.banishAfterLearning.includes(name) ? '取得後放逐' : '';
-        if (role) { const tag = document.createElement('span'); tag.className = `rule-tag ${role === '取得後放逐' ? 'banish' : ''}`; tag.textContent = role; item.append(tag); }
+      for (const [key, title] of [['focus', '專注'], ['banish', '取得後放逐']] as const) {
+        const toggle = document.createElement('button');
+        toggle.className = `rule-toggle ${key}`; toggle.textContent = title;
+        toggle.setAttribute('aria-label', `${title} ${name}`);
+        const active = rules[key].includes(name);
+        toggle.setAttribute('aria-pressed', String(active));
+        toggle.addEventListener('click', () => {
+          rules.focus = rules.focus.filter(value => value !== name);
+          rules.banish = rules.banish.filter(value => value !== name);
+          if (!active) rules[key].push(name);
+          this.commit();
+          this.el('priorities').querySelectorAll('.priority')[index]?.querySelector<HTMLButtonElement>(`.${key}`)?.focus();
+        });
+        item.append(toggle);
       }
       for (const [symbol, title, target] of [['↑', '上移', index - 1], ['↓', '下移', index + 1], ['×', '移除', -1]] as const) {
         const button = document.createElement('button'); button.className = 'icon'; button.textContent = symbol;
         button.setAttribute('aria-label', `${title} ${name}`);
         button.disabled = symbol !== '×' && (target < 0 || target >= names.length);
-        button.addEventListener('click', () => { if (symbol === '×') { names.splice(index, 1); this.commit(); } else this.move(index, target); });
+        button.addEventListener('click', () => {
+          if (symbol !== '×') { this.move(index, target); return; }
+          names.splice(index, 1);
+          rules.focus = rules.focus.filter(value => value !== name);
+          rules.banish = rules.banish.filter(value => value !== name);
+          this.commit();
+        });
         item.append(button);
       }
       item.addEventListener('dragstart', event => { this.dragged = index; event.dataTransfer?.setData('text/plain', String(index)); });
@@ -282,8 +311,8 @@ export class Panel {
             : !card.name ? '無法讀取卡牌名稱' : `加入${cardKind === 'chest' ? '寶箱道具' : '升級技能'}清單`;
           add.addEventListener('click', () => { if (supported) this.addName(card.name, cardKind); });
           row.append(name, add); block.append(row);
-          const skillStatus = cardKind !== 'levelup' ? '' : card.skillState === 'new' ? '尚未取得' : card.skillState === 'owned' ? '已取得・升級牌' : '取得狀態未知';
-          const detail = document.createElement('small'); detail.textContent = [skillStatus, card.badge, card.details, card.requiresConfirmation ? '將替換原有道具' : ''].filter(Boolean).join(' · '); block.append(detail);
+          const ownership = !supported ? '' : card.ownership === 'new' ? '尚未取得' : card.ownership === 'owned' ? '已取得・升級牌' : '取得狀態未知';
+          const detail = document.createElement('small'); detail.textContent = [ownership, card.badge, card.details, card.requiresConfirmation ? '將替換原有道具' : ''].filter(Boolean).join(' · '); block.append(detail);
           if (recommended) { const why = document.createElement('div'); why.className = 'reason'; why.textContent = `推薦 · ${state.recommendation.reason}`; block.append(why); }
           target.append(block);
         });

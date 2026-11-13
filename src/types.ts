@@ -1,7 +1,14 @@
+import type { RollCategory, RollChoice } from './roll-rules';
+
 export type PickKind = 'levelup' | 'chest';
-export interface Profile { id: string; name: string; priorities: string[]; chestPriorities: string[] }
+export type ItemRule = 'focus' | 'banish';
+export type ItemRules = Record<ItemRule, string[]>;
+export interface Profile {
+  id: string; name: string; priorities: string[]; chestPriorities: string[];
+  rules: Record<PickKind, ItemRules>;
+}
 export interface Settings {
-  version: 5;
+  version: 7;
   profiles: Profile[];
   activeProfileId: string;
   fallback: 'pause' | 'rarity';
@@ -9,13 +16,13 @@ export interface Settings {
   chestAutoReplace: boolean;
   delayMinMs: number;
   delayMaxMs: number;
-  autoFocusFirst: boolean;
-  autoBanishLastTwo: boolean;
   autoReroll: boolean;
   chestAutoReroll: boolean;
   loopStageName: string;
   preferNewSkills: boolean;
   autoCollectLoot: boolean;
+  autoRollLoot: boolean;
+  rollRules: Record<RollCategory, RollChoice>;
 }
 export type PerkKind = 'focus' | 'banish' | 'reroll';
 export interface GameAction { kind: PerkKind; element: HTMLButtonElement; left: number | null; enabled: boolean }
@@ -24,7 +31,7 @@ export interface Card {
   name: string;
   badge: string;
   rarity: number | null;
-  skillState: 'new' | 'owned' | 'unknown';
+  ownership: 'new' | 'owned' | 'unknown';
   details: string;
   requiresConfirmation: boolean;
   confirmationText: string;

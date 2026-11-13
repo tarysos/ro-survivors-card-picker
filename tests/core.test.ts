@@ -1,39 +1,65 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decide, decideSnapshot, defaults, minimumDelay, normalizeName, planPerk, priorityName, readRarity, sampleDelay, sanitizeSettings, skillRules, uniqueNames } from '../src/core';
+import { decide, decideSnapshot, defaults, minimumDelay, normalizeName, planPerk, priorityName, readRarity, sampleDelay, sanitizeSettings, uniqueNames } from '../src/core';
 import type { Card, GameAction, PerkKind } from '../src/types';
+import { defaultRollRules, rollCategory } from '../src/roll-rules';
+
+test('party roll preferences migrate independently for each loot category', () => {
+  const previous = { version: 5, autoCollectLoot: false, profiles: [{ id: 'p', name: 'P', priorities: ['A'], chestPriorities: ['B'] }] };
+  const migrated = sanitizeSettings(previous);
+  assert.deepEqual(migrated.profiles.map(({ rules, ...profile }) => profile), previous.profiles);
+  assert.equal(migrated.autoCollectLoot, false);
+  assert.equal(migrated.autoRollLoot, true);
+  assert.deepEqual(Object.entries(migrated.rollRules).filter(([, choice]) => choice === 'need'), [['weapon', 'need']]);
+  const settings = sanitizeSettings({ ...previous, autoRollLoot: false, rollRules: { weapon: 'greed', card: 'need', egg: 'pass', unknown: 'need' } });
+  assert.equal(settings.autoRollLoot, false);
+  assert.deepEqual(settings.rollRules, { ...defaultRollRules(), weapon: 'greed', card: 'need' });
+});
+
+test('rolls identify equipment slots, cards, eggs and unknown items from the reveal', () => {
+  for (const [id, slot] of Object.entries({ 13001: 'weapon', 2101: 'shield', 2301: 'armor', 2503: 'garment', 2404: 'shoes', 5008: 'headTop', 2201: 'headMid', 2262: 'headLow', 22847: 'accessory' })) {
+    assert.equal(rollCategory(`assets/items/${id}_art.png?v=1`, '稀有', []), slot);
+  }
+  assert.equal(rollCategory('assets/items/1701.png', 'rare', []), 'weapon');
+  assert.equal(rollCategory('assets/cards/4001.png', '', []), 'card');
+  for (const badge of ['寵物蛋', 'pet egg', 'huevo de pet', 'ovo de mascote']) assert.equal(rollCategory('assets/items/9001.png', badge, []), 'egg');
+  assert.equal(rollCategory('assets/items/99999.png', '傳說', ['+30 MATK']), 'weapon');
+  assert.equal(rollCategory('assets/items/99999.png', '傳說', ['DEF 2']), 'other');
+});
 
 const action = (kind: PerkKind, left: number | null = 2, enabled = true): GameAction => ({ kind, left, enabled, element: {} as HTMLButtonElement });
-const perkCard = (name: string, skillState: Card['skillState'] = 'owned'): Card => ({ name, rarity: 0, skillState, badge: '普通', details: '', requiresConfirmation: false, confirmationText: '', element: {} as HTMLButtonElement, actions: { focus: action('focus'), banish: action('banish') } });
+const perkCard = (name: string, ownership: Card['ownership'] = 'owned'): Card => ({ name, rarity: 0, ownership, badge: '普通', details: '', requiresConfirmation: false, confirmationText: '', element: {} as HTMLButtonElement, actions: { focus: action('focus'), banish: action('banish') } });
 
 test('loop settings migrate without choosing a stage or persisting activation', () => {
   const previous = { version: 4, profiles: [{ id: 'p', name: 'P', priorities: ['A'], chestPriorities: ['B'] }], activeProfileId: 'p' };
   const migrated = sanitizeSettings(previous);
-  assert.equal(migrated.version, 5); assert.equal(migrated.loopStageName, '');
-  assert.deepEqual(migrated.profiles, previous.profiles);
+  assert.equal(migrated.version, 7); assert.equal(migrated.loopStageName, '');
+  assert.deepEqual(migrated.profiles.map(({ rules, ...profile }) => profile), previous.profiles);
   assert.equal(sanitizeSettings({ ...previous, loopStageName: '  斐揚森林  ', loopEnabled: true }).loopStageName, '斐揚森林');
   assert.equal('loopEnabled' in sanitizeSettings({ loopEnabled: true }), false);
   assert.equal(sanitizeSettings({ loopStageName: {} }).loopStageName, '');
   assert.equal(sanitizeSettings({ loopStageName: 'A'.repeat(200) }).loopStageName.length, 120);
 });
 
-test('skill rules protect the first priority and banish only upgrades of the last two', () => {
+test('new lists have no implicit rules and banish marks survive reordering', () => {
   const settings = defaults();
   for (const names of [[], ['A'], ['A', 'B']]) {
     settings.profiles[0].priorities = names;
-    assert.deepEqual(skillRules(settings).banishAfterLearning, []);
+    assert.deepEqual(settings.profiles[0].rules.levelup, { focus: [], banish: [] });
   }
   settings.profiles[0].priorities = ['A', 'B', 'C', 'D'];
-  assert.deepEqual(skillRules(settings), { focus: 'A', targets: ['A', 'B', 'C', 'D'], banishAfterLearning: ['C', 'D'] });
+  settings.profiles[0].rules.levelup = { focus: ['A'], banish: ['C', 'D'] };
+  settings.profiles[0].priorities.reverse();
   assert.equal(decideSnapshot({ kind: 'levelup', cards: [perkCard('D'), perkCard('B')] }, settings).index, 1);
   settings.fallback = 'rarity';
   assert.equal(decideSnapshot({ kind: 'levelup', cards: [perkCard('D'), perkCard('C')] }, settings).index, null);
-  settings.autoBanishLastTwo = false;
+  settings.profiles[0].rules.levelup.banish = [];
   assert.equal(decideSnapshot({ kind: 'levelup', cards: [perkCard('D')] }, settings).index, 0);
 });
 
 test('perks run focus, lowest-priority banish, then selection; disabled or spent actions are skipped', () => {
   const settings = defaults(); settings.profiles[0].priorities = ['A', 'B', 'C', 'D'];
+  settings.profiles[0].rules.levelup = { focus: ['A'], banish: ['C', 'D'] };
   const cards = ['C', 'A', 'D'].map(name => perkCard(name));
   const snapshot = { kind: 'levelup' as const, cards, reroll: action('reroll') };
   assert.equal(planPerk(snapshot, settings)?.kind, 'focus');
@@ -67,13 +93,34 @@ test('reroll needs a nonempty target list, no matching target and a known positi
 });
 
 test('new perk defaults migrate existing lists and preserve explicit disabled switches', () => {
-  const migrated = sanitizeSettings({ version: 3, profiles: [{ id: 'p', name: 'P', priorities: ['A', 'B', 'C'], chestPriorities: ['Item'] }] });
-  assert.equal(migrated.autoFocusFirst, true); assert.equal(migrated.autoBanishLastTwo, true);
+  const legacy = { version: 3, profiles: [{ id: 'p', name: 'P', priorities: ['A', 'B', 'C'], chestPriorities: ['Item'] }] };
+  const migrated = sanitizeSettings(legacy);
+  assert.deepEqual(migrated.profiles[0].rules, { levelup: { focus: ['A'], banish: ['B', 'C'] }, chest: { focus: [], banish: [] } });
+  assert.deepEqual(sanitizeSettings(migrated), migrated);
   assert.equal(migrated.autoReroll, true); assert.equal(migrated.chestAutoReroll, true);
-  const disabled = sanitizeSettings({ ...migrated, autoFocusFirst: false, autoBanishLastTwo: false, autoReroll: false, chestAutoReroll: false });
-  assert.deepEqual(skillRules(disabled), { focus: null, banishAfterLearning: [], targets: ['A', 'B', 'C'] });
+  const disabled = sanitizeSettings({ ...legacy, autoFocusFirst: false, autoBanishLastTwo: false, autoReroll: false, chestAutoReroll: false });
+  assert.deepEqual(disabled.profiles[0].rules.levelup, { focus: [], banish: [] });
   assert.equal(disabled.autoReroll, false); assert.equal(disabled.chestAutoReroll, false);
   assert.deepEqual(disabled.profiles[0].chestPriorities, ['Item']);
+});
+
+test('multiple focus marks follow list order and stay scoped to the active profile and picker', () => {
+  const settings = sanitizeSettings({ version: 7, profiles: [
+    { id: 'first', priorities: ['A', 'B', 'C'], chestPriorities: ['C'], rules: { levelup: { focus: ['B', 'C'] }, chest: { banish: ['C'] } } },
+    { id: 'second', priorities: ['B', 'C'], chestPriorities: ['C'] },
+  ] });
+  const cards = [perkCard('C'), perkCard('B')];
+  const skill = { kind: 'levelup' as const, cards, reroll: null };
+  assert.equal(planPerk(skill, settings)?.cardIndex, 1);
+  cards[1].actions.focus!.enabled = false;
+  assert.equal(planPerk(skill, settings)?.cardIndex, 0);
+  const chest = { kind: 'chest' as const, cards: [perkCard('C +2')], reroll: null };
+  assert.equal(planPerk(chest, settings)?.kind, 'banish');
+  chest.cards[0].actions.banish!.left = 0;
+  assert.equal(decideSnapshot(chest, settings).index, null);
+  settings.activeProfileId = 'second';
+  assert.equal(planPerk(skill, settings), null);
+  assert.equal(decideSnapshot(chest, settings).index, 0);
 });
 
 test('priority outranks rarity; names match exactly after harmless whitespace/case normalization', () => {
@@ -84,6 +131,7 @@ test('priority outranks rarity; names match exactly after harmless whitespace/ca
 
 test('last two skills are picked at their original ranks before their upgrades can be banished', () => {
   const settings = defaults(); settings.profiles[0].priorities = ['A', 'B', 'C', 'D'];
+  settings.profiles[0].rules.levelup = { focus: ['A'], banish: ['C', 'D'] };
   const snapshot = { kind: 'levelup' as const, cards: [perkCard('D', 'new'), perkCard('C', 'new')], reroll: action('reroll') };
   assert.equal(planPerk(snapshot, settings), null);
   assert.equal(decideSnapshot(snapshot, settings).index, 1);
@@ -93,19 +141,20 @@ test('last two skills are picked at their original ranks before their upgrades c
   settings.preferNewSkills = false;
   assert.equal(decideSnapshot(snapshot, settings).index, 0);
   settings.preferNewSkills = true;
-  snapshot.cards.shift(); snapshot.cards[1].skillState = 'owned';
+  snapshot.cards.shift(); snapshot.cards[1].ownership = 'owned';
   assert.equal(planPerk(snapshot, settings)?.kind, 'banish');
   assert.equal(planPerk(snapshot, settings)?.cardIndex, 1);
   assert.equal(decideSnapshot(snapshot, settings).index, 0);
   snapshot.cards[1].actions.banish!.left = 0;
   assert.equal(planPerk(snapshot, settings), null); // New D is a target; do not reroll it away.
-  snapshot.cards[0].skillState = 'owned'; snapshot.cards[0].actions.banish!.left = 0;
+  snapshot.cards[0].ownership = 'owned'; snapshot.cards[0].actions.banish!.left = 0;
   assert.equal(planPerk(snapshot, settings)?.kind, 'reroll');
   assert.equal(decideSnapshot(snapshot, settings).index, null);
 });
 
 test('unknown ownership never authorizes banishment or exclusion from the priority list', () => {
   const settings = defaults(); settings.profiles[0].priorities = ['A', 'C', 'D'];
+  settings.profiles[0].rules.levelup.banish = ['D'];
   const snapshot = { kind: 'levelup' as const, cards: [perkCard('D', 'unknown')], reroll: action('reroll') };
   assert.equal(planPerk(snapshot, settings), null);
   assert.equal(decideSnapshot(snapshot, settings).index, 0);
@@ -146,7 +195,7 @@ test('minimum delay respects the observed game animation lock for any card count
 
 test('v1 settings retain all skill profiles and gain separate empty chest lists', () => {
   const settings = sanitizeSettings({ version: 1, profiles: [{ id: 'mage', name: '法師', priorities: ['Fire Bolt', 'Heal'] }], activeProfileId: 'mage', fallback: 'rarity', delayMs: 2500 });
-  assert.equal(settings.version, 5);
+  assert.equal(settings.version, 7);
   assert.equal(settings.activeProfileId, 'mage');
   assert.deepEqual(settings.profiles[0].priorities, ['Fire Bolt', 'Heal']);
   assert.deepEqual(settings.profiles[0].chestPriorities, []);
@@ -184,7 +233,7 @@ test('delay range validation and migration retain card settings and normalize re
 test('chest matching ignores only trailing refinement and uses its own priority/fallback', () => {
   const settings = defaults();
   settings.profiles[0].priorities = ['B']; settings.profiles[0].chestPriorities = ['A'];
-  const cards = [{ name: 'B', rarity: 4, skillState: 'unknown' as const }, { name: 'A +3', rarity: 0, skillState: 'unknown' as const }];
+  const cards = [{ name: 'B', rarity: 4, ownership: 'unknown' as const }, { name: 'A +3', rarity: 0, ownership: 'unknown' as const }];
   assert.equal(decideSnapshot({ kind: 'chest', cards }, settings).index, 1);
   assert.equal(decideSnapshot({ kind: 'levelup', cards }, settings).index, 0);
   assert.equal(priorityName('A +3', 'levelup'), 'A +3');
@@ -217,12 +266,12 @@ test('chest quality outranks order while skills can opt out of the new-skills ru
 });
 
 test('listed orange skills precede new skills, then normal priority resumes when none are new', () => {
-  const settings = defaults(); settings.profiles[0].priorities = ['A', 'B', 'C']; settings.autoBanishLastTwo = false;
+  const settings = defaults(); settings.profiles[0].priorities = ['A', 'B', 'C']; settings.profiles[0].rules.levelup.banish = [];
   const cards = [perkCard('A'), perkCard('B', 'new'), { ...perkCard('C'), rarity: 4 }];
   assert.equal(decideSnapshot({ kind: 'levelup', cards }, settings).index, 2);
   cards[2].rarity = 3;
   assert.equal(decideSnapshot({ kind: 'levelup', cards }, settings).index, 1);
-  cards[1].skillState = 'owned';
+  cards[1].ownership = 'owned';
   assert.equal(decideSnapshot({ kind: 'levelup', cards }, settings).index, 0);
 });
 
@@ -232,13 +281,14 @@ test('new-skill priority excludes unlisted orange and new cards, and keeps rank 
   for (const fallback of ['pause', 'rarity'] as const) {
     settings.fallback = fallback;
     assert.equal(decideSnapshot({ kind: 'levelup', cards }, settings).index, 3);
-    cards[2].skillState = cards[3].skillState = 'owned'; cards[2].rarity = cards[3].rarity = 4;
+    cards[2].ownership = cards[3].ownership = 'owned'; cards[2].rarity = cards[3].rarity = 4;
     assert.equal(decideSnapshot({ kind: 'levelup', cards }, settings).index, 3);
   }
 });
 
 test('orange upgrades do not bypass acquisition-before-banish exclusions', () => {
   const settings = defaults(); settings.profiles[0].priorities = ['A', 'B', 'C', 'D'];
+  settings.profiles[0].rules.levelup = { focus: ['A'], banish: ['C', 'D'] };
   const cards = [perkCard('A'), { ...perkCard('C'), rarity: 4 }, perkCard('D', 'new')];
   assert.equal(decideSnapshot({ kind: 'levelup', cards }, settings).index, 2);
   assert.equal(planPerk({ kind: 'levelup', cards, reroll: action('reroll') }, settings)?.kind, 'focus');

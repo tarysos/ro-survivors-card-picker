@@ -1,24 +1,206 @@
 "use strict";
 (() => {
+  // src/roll-rules.ts
+  var rollCategories = {
+    weapon: "\u6B66\u5668",
+    shield: "\u76FE\u724C",
+    armor: "\u93A7\u7532",
+    garment: "\u62AB\u80A9",
+    shoes: "\u978B\u5B50",
+    headTop: "\u982D\u98FE\uFF08\u4E0A\u6BB5\uFF09",
+    headMid: "\u982D\u98FE\uFF08\u4E2D\u6BB5\uFF09",
+    headLow: "\u982D\u98FE\uFF08\u4E0B\u6BB5\uFF09",
+    accessory: "\u98FE\u54C1",
+    card: "\u5361\u7247",
+    egg: "\u5BF5\u7269\u86CB",
+    other: "\u5176\u4ED6"
+  };
+  var rollCategoryKeys = Object.keys(rollCategories);
+  var rollChoiceLabels = { need: "Need", greed: "Greed" };
+  function defaultRollRules() {
+    return {
+      weapon: "need",
+      shield: "greed",
+      armor: "greed",
+      garment: "greed",
+      shoes: "greed",
+      headTop: "greed",
+      headMid: "greed",
+      headLow: "greed",
+      accessory: "greed",
+      card: "greed",
+      egg: "greed",
+      other: "greed"
+    };
+  }
+  var equipmentIds = {
+    weapon: [
+      1101,
+      1104,
+      1105,
+      1107,
+      1108,
+      1110,
+      1117,
+      1124,
+      1125,
+      1126,
+      1127,
+      1128,
+      1131,
+      1133,
+      1135,
+      1138,
+      1152,
+      1163,
+      1189,
+      1201,
+      1202,
+      1207,
+      1208,
+      1210,
+      1214,
+      1216,
+      1217,
+      1219,
+      1220,
+      1222,
+      1228,
+      1234,
+      1250,
+      1252,
+      1253,
+      1254,
+      1256,
+      1258,
+      1261,
+      1262,
+      1265,
+      1301,
+      1302,
+      1304,
+      1309,
+      1351,
+      1355,
+      1370,
+      1377,
+      1402,
+      1405,
+      1407,
+      1408,
+      1413,
+      1460,
+      1466,
+      1477,
+      1501,
+      1502,
+      1504,
+      1505,
+      1511,
+      1513,
+      1517,
+      1519,
+      1524,
+      1525,
+      1528,
+      1530,
+      1550,
+      1553,
+      1555,
+      1557,
+      1558,
+      1601,
+      1602,
+      1604,
+      1607,
+      1610,
+      1613,
+      1648,
+      1701,
+      1702,
+      1704,
+      1708,
+      1711,
+      1718,
+      1722,
+      1734,
+      1801,
+      1803,
+      1805,
+      1806,
+      1809,
+      1812,
+      1813,
+      1901,
+      1905,
+      1909,
+      1913,
+      1950,
+      1954,
+      1958,
+      1964,
+      13001,
+      13007,
+      13011,
+      13046,
+      13101,
+      13104,
+      13150,
+      13151,
+      13156,
+      13160,
+      13301,
+      13303
+    ],
+    shield: [2101, 2102, 2103, 2104, 2107, 2110, 2114, 2115, 2116, 2124],
+    armor: [2301, 2302, 2303, 2304, 2305, 2306, 2307, 2308, 2311, 2314, 2316, 2320, 2321, 2324, 2329, 2330, 2333, 2335, 2336, 2337, 2353, 2355, 2357, 2367],
+    garment: [2503, 2504, 2505, 2507, 2509, 2511, 2515],
+    shoes: [2404, 2405, 2406, 2410, 2411, 2418, 2419, 2420, 2424],
+    headTop: [2207, 2209, 2211, 2213, 2214, 2220, 2221, 2226, 2234, 2235, 2244, 2245, 2246, 2247, 2248, 2250, 2251, 2252, 2254, 2255, 2256, 2257, 2264, 2272, 2274, 2277, 2280, 2282, 2285, 2287, 2289, 2298, 2299, 5008, 5012, 5013, 5017, 5019, 5035, 5038, 5046],
+    headMid: [2201, 2205, 2212, 2260, 2286, 2291, 2296],
+    headLow: [2262, 2268, 2288, 2292, 2297],
+    accessory: [2603, 2605, 2607, 2608, 2609, 2610, 2614, 2615, 2616, 2617, 2619, 2620, 2627, 2629, 2630, 2678, 2679, 22847]
+  };
+  var slots = /* @__PURE__ */ new Map();
+  for (const slot of Object.keys(equipmentIds)) {
+    for (const id of equipmentIds[slot]) slots.set(id, slot);
+  }
+  function rollCategory(artwork, badge, baseStats) {
+    const path = artwork.split(/[?#]/, 1)[0];
+    if (["\u5361\u7247", "card", "carta"].includes(badge) || /(?:^|\/)cards\/\d+\.png$/i.test(path)) return "card";
+    if (["\u5BF5\u7269\u86CB", "pet egg", "huevo de pet", "ovo de mascote"].includes(badge)) return "egg";
+    const id = /(?:^|\/)items\/(\d+)(?:_art)?\.png$/i.exec(path)?.[1];
+    const slot = id && slots.get(Number(id));
+    if (slot) return slot;
+    return baseStats.some((stat) => /^\+\d+ (?:ATK|MATK)$/.test(stat)) ? "weapon" : "other";
+  }
+
   // src/core.ts
   var STORAGE_KEY = "roPickerSettings";
   var normalizeName = (value) => value.normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase();
+  var emptyProfile = (id, name) => ({
+    id,
+    name,
+    priorities: [],
+    chestPriorities: [],
+    rules: { levelup: { focus: [], banish: [] }, chest: { focus: [], banish: [] } }
+  });
   var defaults = () => ({
-    version: 5,
-    profiles: [{ id: "default", name: "\u6211\u7684\u512A\u5148\u6E05\u55AE", priorities: [], chestPriorities: [] }],
+    version: 7,
+    profiles: [emptyProfile("default", "\u6211\u7684\u512A\u5148\u6E05\u55AE")],
     activeProfileId: "default",
     fallback: "pause",
     delayMinMs: 500,
     delayMaxMs: 1500,
     chestFallback: "pause",
     chestAutoReplace: true,
-    autoFocusFirst: true,
-    autoBanishLastTwo: true,
     autoReroll: true,
     chestAutoReroll: true,
     loopStageName: "",
     preferNewSkills: true,
-    autoCollectLoot: true
+    autoCollectLoot: true,
+    autoRollLoot: true,
+    rollRules: defaultRollRules()
   });
   var priorityName = (name, kind) => kind === "chest" ? name.normalize("NFKC").trim().replace(/\s+\+\d+$/u, "") : name.trim();
   function uniqueNames(values) {
@@ -30,6 +212,14 @@
       return true;
     }).slice(0, 200);
   }
+  function sanitizeRules(raw, names) {
+    const valid = (values) => {
+      const marked = new Set(uniqueNames(Array.isArray(values) ? values : []).map(normalizeName));
+      return names.filter((name) => marked.has(normalizeName(name)));
+    };
+    const focus = valid(raw?.focus);
+    return { focus, banish: valid(raw?.banish).filter((name) => !focus.includes(name)) };
+  }
   function sanitizeSettings(raw) {
     const base = defaults();
     if (!raw || typeof raw !== "object") return base;
@@ -38,11 +228,18 @@
     const profiles = Array.isArray(data.profiles) ? data.profiles.slice(0, 20).flatMap((p) => {
       if (!p || typeof p.id !== "string" || !p.id || ids.has(p.id)) return [];
       ids.add(p.id);
+      const priorities = uniqueNames(Array.isArray(p.priorities) ? p.priorities : []);
+      const chestPriorities = uniqueNames((Array.isArray(p.chestPriorities) ? p.chestPriorities : []).filter((n) => typeof n === "string").map((n) => priorityName(n, "chest")));
+      const levelup = (data.version ?? 0) < 7 && !p.rules ? {
+        focus: data.autoFocusFirst !== false ? priorities.slice(0, 1) : [],
+        banish: data.autoBanishLastTwo !== false && priorities.length >= 3 ? priorities.slice(-2) : []
+      } : sanitizeRules(p.rules?.levelup, priorities);
       return [{
         id: p.id.slice(0, 100),
         name: typeof p.name === "string" && p.name.trim() ? p.name.trim().slice(0, 60) : "\u672A\u547D\u540D\u6E05\u55AE",
-        priorities: uniqueNames(Array.isArray(p.priorities) ? p.priorities : []),
-        chestPriorities: uniqueNames((Array.isArray(p.chestPriorities) ? p.chestPriorities : []).filter((n) => typeof n === "string").map((n) => priorityName(n, "chest")))
+        priorities,
+        chestPriorities,
+        rules: { levelup, chest: sanitizeRules(p.rules?.chest, chestPriorities) }
       }];
     }) : [];
     if (profiles.length) base.profiles = profiles;
@@ -50,65 +247,66 @@
     base.fallback = data.fallback === "rarity" ? "rarity" : "pause";
     base.chestFallback = data.chestFallback === "rarity" ? "rarity" : "pause";
     base.chestAutoReplace = data.chestAutoReplace !== false;
-    base.autoFocusFirst = data.autoFocusFirst !== false;
-    base.autoBanishLastTwo = data.autoBanishLastTwo !== false;
     base.autoReroll = data.autoReroll !== false;
     base.chestAutoReroll = data.chestAutoReroll !== false;
     base.loopStageName = typeof data.loopStageName === "string" ? data.loopStageName.trim().slice(0, 120) : "";
     base.preferNewSkills = data.preferNewSkills !== false;
     base.autoCollectLoot = data.autoCollectLoot !== false;
+    base.autoRollLoot = data.autoRollLoot !== false;
+    for (const category of rollCategoryKeys) {
+      const choice = data.rollRules?.[category];
+      if (choice === "need" || choice === "greed") base.rollRules[category] = choice;
+    }
     const delay = (value, fallback) => typeof value === "number" && Number.isFinite(value) ? Math.round(Math.max(500, Math.min(5e3, value))) : fallback;
     const lower = delay(data.delayMinMs, 500), upper = delay(data.delayMaxMs, 1500);
     base.delayMinMs = Math.min(lower, upper);
     base.delayMaxMs = Math.max(lower, upper);
     return base;
   }
-  function isBanishUpgrade(card, names) {
-    return card.skillState === "owned" && names.some((name) => normalizeName(name) === normalizeName(card.name));
+  function isBanishUpgrade(card, names, kind) {
+    return card.ownership === "owned" && names.some((name) => normalizeName(name) === normalizeName(priorityName(card.name, kind)));
   }
   function decideSnapshot(snapshot, settings) {
+    const kind = snapshot.kind;
+    if (kind !== "levelup" && kind !== "chest") return { index: null, reason: "\u50C5\u8655\u7406\u5347\u7D1A\u6280\u80FD\u8207\u5BF6\u7BB1\u9053\u5177\u9078\u724C" };
     const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
-    if (snapshot.kind === "levelup") {
-      const rules = skillRules(settings);
-      const candidates = snapshot.cards.map((card, index) => ({ card, index })).filter((c) => !isBanishUpgrade(c.card, rules.banishAfterLearning));
-      if (!candidates.length) return { index: null, reason: "\u76EE\u524D\u53EA\u6709\u5DF2\u53D6\u5F97\u6280\u80FD\u7684\u653E\u9010\u5C0D\u8C61\uFF0C\u8ACB\u91CD\u62BD\u6216\u624B\u52D5\u9078\u64C7" };
-      if (settings.preferNewSkills) {
-        const matched = candidates.filter(({ card }) => rules.targets.some((name) => normalizeName(name) === normalizeName(card.name)));
-        const orange = matched.filter(({ card }) => card.rarity === 4);
-        const fresh = matched.filter(({ card }) => card.skillState === "new");
-        const preferred = orange.length ? orange : fresh;
-        if (preferred.length) {
-          const result2 = decide(preferred.map(({ card }) => card), rules.targets, "pause");
-          return { index: preferred[result2.index].index, reason: `${orange.length ? "\u6E05\u55AE\u5167\u6A58\u8272\uFF08\u50B3\u8AAA\uFF09\u6280\u80FD\u512A\u5148" : "\u512A\u5148\u88DC\u9F4A\u5C1A\u672A\u53D6\u5F97\u7684\u6E05\u55AE\u6280\u80FD"}\uFF1B${result2.reason}` };
-        }
+    const names = kind === "chest" ? profile.chestPriorities : profile.priorities;
+    const candidates = snapshot.cards.map((card, index) => ({ card, index })).filter(({ card }) => !isBanishUpgrade(card, profile.rules[kind].banish, kind));
+    if (!candidates.length && snapshot.cards.length) return { index: null, reason: "\u76EE\u524D\u53EA\u6709\u5DF2\u53D6\u5F97\u7684\u653E\u9010\u5C0D\u8C61\uFF0C\u8ACB\u91CD\u62BD\u6216\u624B\u52D5\u9078\u64C7" };
+    if (kind === "levelup" && settings.preferNewSkills) {
+      const matched = candidates.filter(({ card }) => names.some((name) => normalizeName(name) === normalizeName(card.name)));
+      const orange = matched.filter(({ card }) => card.rarity === 4);
+      const fresh = matched.filter(({ card }) => card.ownership === "new");
+      const preferred = orange.length ? orange : fresh;
+      if (preferred.length) {
+        const result2 = decide(preferred.map(({ card }) => card), names, "pause");
+        return { index: preferred[result2.index].index, reason: `${orange.length ? "\u6E05\u55AE\u5167\u6A58\u8272\uFF08\u50B3\u8AAA\uFF09\u6280\u80FD\u512A\u5148" : "\u512A\u5148\u88DC\u9F4A\u5C1A\u672A\u53D6\u5F97\u7684\u6E05\u55AE\u6280\u80FD"}\uFF1B${result2.reason}` };
       }
-      const result = decide(candidates.map((c) => c.card), rules.targets, settings.fallback);
-      return { ...result, index: result.index === null ? null : candidates[result.index].index };
     }
-    if (snapshot.kind === "chest") return decide(snapshot.cards.map((c) => ({ ...c, name: priorityName(c.name, "chest") })), profile.chestPriorities, settings.chestFallback, "rarity");
-    return { index: null, reason: "\u50C5\u8655\u7406\u5347\u7D1A\u6280\u80FD\u8207\u5BF6\u7BB1\u9053\u5177\u9078\u724C" };
-  }
-  function skillRules(settings) {
-    const names = settings.profiles.find((p) => p.id === settings.activeProfileId).priorities;
-    const banishAfterLearning = settings.autoBanishLastTwo && names.length >= 3 ? names.slice(-2) : [];
-    return { focus: settings.autoFocusFirst ? names[0] ?? null : null, banishAfterLearning, targets: names };
+    const cards = candidates.map(({ card }) => ({ ...card, name: priorityName(card.name, kind) }));
+    const result = decide(cards, names, kind === "chest" ? settings.chestFallback : settings.fallback, kind === "chest" ? "rarity" : "priority");
+    return { ...result, index: result.index === null ? null : candidates[result.index].index };
   }
   function planPerk(snapshot, settings) {
-    if (!snapshot.cards.length || snapshot.kind !== "levelup" && snapshot.kind !== "chest") return null;
+    const kind = snapshot.kind;
+    if (!snapshot.cards.length || kind !== "levelup" && kind !== "chest") return null;
     const profile = settings.profiles.find((p) => p.id === settings.activeProfileId);
-    const rules = skillRules(settings);
+    const targets = kind === "levelup" ? profile.priorities : profile.chestPriorities;
+    const rules = profile.rules[kind];
     const usable = (action) => !!action?.enabled && action.left !== null && action.left > 0;
-    if (snapshot.kind === "levelup") {
-      const focusIndex = rules.focus ? snapshot.cards.findIndex((card) => normalizeName(card.name) === normalizeName(rules.focus) && usable(card.actions.focus ?? null)) : -1;
-      if (focusIndex >= 0) return { kind: "focus", cardIndex: focusIndex, action: snapshot.cards[focusIndex].actions.focus, description: `\u5C08\u6CE8\u300C${snapshot.cards[focusIndex].name}\u300D` };
-      for (const name of [...rules.banishAfterLearning].reverse()) {
-        const index = snapshot.cards.findIndex((card) => isBanishUpgrade(card, [name]) && usable(card.actions.banish ?? null));
-        if (index >= 0) return { kind: "banish", cardIndex: index, action: snapshot.cards[index].actions.banish, description: `\u653E\u9010\u300C${snapshot.cards[index].name}\u300D` };
+    for (const perk of ["focus", "banish"]) {
+      const marked = targets.filter((name) => rules[perk].includes(name));
+      if (perk === "banish") marked.reverse();
+      for (const name of marked) {
+        const index = snapshot.cards.findIndex((card) => normalizeName(priorityName(card.name, kind)) === normalizeName(name) && (perk === "focus" || card.ownership === "owned") && usable(card.actions[perk] ?? null));
+        if (index >= 0) {
+          const card = snapshot.cards[index];
+          return { kind: perk, cardIndex: index, action: card.actions[perk], description: `${perk === "focus" ? "\u5C08\u6CE8" : "\u653E\u9010"}\u300C${card.name}\u300D` };
+        }
       }
     }
-    const targets = snapshot.kind === "levelup" ? rules.targets : profile.chestPriorities;
     const rerollEnabled = snapshot.kind === "levelup" ? settings.autoReroll : settings.chestAutoReroll;
-    const matched = snapshot.cards.some((card) => (snapshot.kind !== "levelup" || !isBanishUpgrade(card, rules.banishAfterLearning)) && targets.some((name) => normalizeName(name) === normalizeName(priorityName(card.name, snapshot.kind))));
+    const matched = snapshot.cards.some((card) => !isBanishUpgrade(card, rules.banish, kind) && targets.some((name) => normalizeName(name) === normalizeName(priorityName(card.name, kind))));
     if (rerollEnabled && targets.length > 0 && !matched && usable(snapshot.reroll)) return { kind: "reroll", cardIndex: null, action: snapshot.reroll, description: `\u5168\u90E8\u91CD\u62BD\uFF08\u5269\u9918 ${snapshot.reroll.left} \u6B21\uFF09` };
     return null;
   }
@@ -183,9 +381,13 @@
     const cards = [...root.querySelectorAll("#pk-cards .pk-card")].map((element) => {
       const badge = text(element, ".pk-badge");
       const name = text(element, ".pk-name");
-      const fresh = kind === "levelup" && !!element.querySelector(".pk-ribbon");
-      const rarity = readRarity(badge, fresh);
-      const skillState = kind !== "levelup" ? "unknown" : fresh ? "new" : rarity !== null && rarity >= 0 ? "owned" : "unknown";
+      const fresh = !!element.querySelector(".pk-ribbon");
+      const rarity = readRarity(badge, kind === "levelup" && fresh);
+      let ownership = "unknown";
+      if (kind === "levelup" || kind === "chest") {
+        if (fresh) ownership = "new";
+        else if (kind === "chest" ? /\s\+[1-9]\d*$/.test(name.normalize("NFKC")) : rarity !== null) ownership = "owned";
+      }
       const actions = {};
       for (const action of readActions(element.closest(".pk-slot")?.querySelector(".pk-acts") ?? null)) {
         if (action.kind === "focus" || action.kind === "banish") actions[action.kind] = action;
@@ -194,7 +396,7 @@
         name,
         badge,
         rarity,
-        skillState,
+        ownership,
         details: [text(element, ".pk-sub"), text(element, ".pk-lines")].filter(Boolean).join(" \xB7 "),
         requiresConfirmation: !!element.closest(".pk-slot")?.querySelector(".pk-back"),
         confirmationText: element.closest(".pk-slot")?.querySelector(".pk-back")?.textContent?.trim() ?? "",
@@ -210,7 +412,7 @@
       title,
       cards,
       reroll,
-      signature: JSON.stringify([kind, title, text(root, "#pk-sub"), text(root, "#pk-gain"), actionSignature(reroll), cards.map((c) => [c.name, c.badge, c.skillState, c.details, c.requiresConfirmation, c.confirmationText, actionSignature(c.actions.focus), actionSignature(c.actions.banish)])]),
+      signature: JSON.stringify([kind, title, text(root, "#pk-sub"), text(root, "#pk-gain"), actionSignature(reroll), cards.map((c) => [c.name, c.badge, c.ownership, c.details, c.requiresConfirmation, c.confirmationText, actionSignature(c.actions.focus), actionSignature(c.actions.banish)])]),
       timer: visible(root.querySelector("#pk-timer")) ? text(root, "#pk-timer") : "",
       closing: root.classList.contains("closing") || !!root.querySelector(".pk-slot.chosen"),
       confirming: !!root.querySelector(".pk-slot.asking,.pk-slot.flip")
@@ -221,6 +423,36 @@
   }
 
   // src/loot.ts
+  function readLootAction(root, settings) {
+    const name = root.querySelector(".dr-name")?.textContent?.trim();
+    const badge = normalizeName(root.querySelector(".dr-q")?.textContent?.split("\xB7")[0] ?? "");
+    const artwork = root.querySelector(".dr-card img")?.getAttribute("src") ?? "";
+    if (root.classList.contains("roll")) {
+      const choices = root.querySelector(".dr-roll .dr-roll-btns");
+      if (!name || root.querySelector(".dr-result") || !choices) return null;
+      const baseStats = Array.from(root.querySelectorAll(".dr-stats > li > b"), (el) => el.textContent.trim());
+      const category = rollCategory(artwork, badge, baseStats);
+      const choice = settings.rollRules[category];
+      const button2 = choices.querySelector(`button[data-c="${choice}"]`);
+      if (!button2) return null;
+      return {
+        button: button2,
+        description: `\u300C${name}\u300D\uFF08${rollCategories[category]}\uFF09\u9078 ${rollChoiceLabels[choice]}`,
+        signature: JSON.stringify([name, badge, artwork, category, choice]),
+        isRoll: true,
+        enabled: settings.autoRollLoot
+      };
+    }
+    const button = root.querySelector("button.dr-get");
+    if (!button || root.querySelector(".dr-roll, [data-c]") || !["\u53D6\u5F97", "get", "coger", "pegar"].includes(normalizeName(button.textContent ?? ""))) return null;
+    return {
+      button,
+      description: name ? `\u53D6\u5F97\u300C${name}\u300D` : "\u53D6\u5F97\u6389\u843D\u7269",
+      signature: JSON.stringify([name, badge, artwork, button.textContent]),
+      isRoll: false,
+      enabled: settings.autoCollectLoot
+    };
+  }
   var LootCollector = class {
     constructor(log, fail) {
       this.log = log;
@@ -229,57 +461,60 @@
     log;
     fail;
     current = null;
+    handled = null;
+    handledSignature = "";
     attempt = null;
     defer() {
-      if (this.current && !this.current.handled) this.current.readyAt = performance.now() + this.current.delay;
+      if (this.current) this.current.readyAt = performance.now() + this.current.delay;
     }
     manual() {
-      if (this.current) this.current.handled = true;
+      const root = document.getElementById("drop-reveal");
+      this.handled = root?.querySelector(".dr-roll, button.dr-get") ?? null;
+      this.handledSignature = this.current?.signature ?? "";
     }
     tick(settings, enabled) {
       const root = document.getElementById("drop-reveal");
       const shown = visible(root);
-      const button = shown ? root.querySelector("button.dr-get") : null;
-      const name = shown ? root.querySelector(".dr-name")?.textContent?.trim() ?? "" : "";
-      const badge = shown ? root.querySelector(".dr-q")?.textContent?.trim() ?? "" : "";
-      const signature = JSON.stringify([name, badge, button?.textContent]);
+      const action = shown ? readLootAction(root, settings) : null;
+      const now = performance.now();
       if (this.attempt) {
-        if (!shown || button !== this.attempt.loot.button || signature !== this.attempt.loot.signature) {
-          this.log(`\u5DF2\u9EDE\u64CA\u53D6\u5F97\u300C${this.attempt.loot.name}\u300D`);
+        const { action: submitted, at } = this.attempt;
+        const changedPickup = !submitted.isRoll && action?.signature !== submitted.signature;
+        if (!shown || !root.contains(submitted.button) || changedPickup) {
+          this.log(`\u5DF2${submitted.isRoll ? "\u70BA" : "\u9EDE\u64CA"}${submitted.description}`);
           this.attempt = null;
-        } else if (performance.now() - this.attempt.at > 1500) {
+        } else if (now - at > 1500) {
           this.attempt = null;
-          this.fail("\u904A\u6232\u672A\u78BA\u8A8D\u88DD\u5099\u53D6\u5F97\uFF0C\u5DF2\u66AB\u505C\u3002\u8ACB\u624B\u52D5\u6AA2\u67E5\u63D0\u793A\u3002");
-        }
+          this.fail(`\u904A\u6232\u672A\u78BA\u8A8D${submitted.isRoll ? "\u7D44\u968A\u5206\u5BF6" : submitted.description}\uFF0C\u5DF2\u66AB\u505C\u3002\u8ACB\u624B\u52D5\u6AA2\u67E5\u63D0\u793A\u3002`);
+        } else return submitted.isRoll ? "\u7B49\u5F85\u904A\u6232\u78BA\u8A8D\u7D44\u968A\u5206\u5BF6" : `\u7B49\u5F85\u904A\u6232\u78BA\u8A8D${submitted.description}`;
       }
       if (!shown) {
         this.current = null;
+        this.handled = null;
         return null;
       }
-      const isEquipment = readRarity(badge.split("\xB7")[0].trim(), false) !== null;
-      const supported = button && visible(button) && !button.disabled && button.getAttribute("aria-disabled") !== "true" && !root.classList.contains("roll") && !root.querySelector(".dr-roll, [data-c], .dr-result") && ["\u53D6\u5F97", "get", "coger", "pegar"].includes(normalizeName(button.textContent ?? "")) && isEquipment && !!name;
-      if (!supported) {
+      if (!action || !visible(action.button) || action.button.disabled || action.button.getAttribute("aria-disabled") === "true") {
         this.current = null;
         return "\u6389\u843D\u63D0\u793A\u4FDD\u7559\u624B\u52D5\u64CD\u4F5C";
       }
-      if (this.current?.button !== button || this.current.signature !== signature) {
+      const reveal = action.button.closest(".dr-roll") ?? action.button;
+      if (this.handled === reveal && (action.isRoll || !this.handledSignature || this.handledSignature === action.signature)) return "\u672C\u4EF6\u6389\u843D\u5DF2\u8655\u7406 \xB7 \u7B49\u5F85\u95DC\u9589";
+      if (this.current?.button !== action.button || this.current.signature !== action.signature) {
         const delay = Math.max(750, sampleDelay(settings));
-        this.current = { button, name, signature, delay, readyAt: performance.now() + delay, handled: false };
+        this.current = { button: action.button, signature: action.signature, delay, readyAt: now + delay };
       }
-      if (this.attempt) return "\u7B49\u5F85\u904A\u6232\u78BA\u8A8D\u88DD\u5099\u53D6\u5F97";
-      if (this.current.handled) return "\u88DD\u5099\u63D0\u793A\u5DF2\u8655\u7406 \xB7 \u7B49\u5F85\u95DC\u9589";
-      if (!enabled || !settings.autoCollectLoot) return "\u88DD\u5099\u53D6\u5F97\u63D0\u793A \xB7 \u81EA\u52D5\u53D6\u5F97\u5C1A\u672A\u555F\u7528";
+      if (!action.enabled) return action.isRoll ? "\u7D44\u968A\u5206\u5BF6 \xB7 \u624B\u52D5\u64F2\u9AB0" : "\u81EA\u52D5\u53D6\u5F97\u5C1A\u672A\u555F\u7528";
+      if (!enabled) return `\u9810\u89BD \xB7 ${action.description}`;
       if (document.visibilityState !== "visible") {
         this.defer();
-        return "\u5206\u9801\u5728\u80CC\u666F \xB7 \u8FD4\u56DE\u5F8C\u53D6\u5F97\u88DD\u5099";
+        return "\u5206\u9801\u5728\u80CC\u666F \xB7 \u8FD4\u56DE\u5F8C\u7E7C\u7E8C";
       }
-      if (performance.now() >= this.current.readyAt) {
-        this.current.handled = true;
-        this.attempt = { loot: this.current, at: performance.now() };
-        button.click();
-        return "\u7B49\u5F85\u904A\u6232\u78BA\u8A8D\u88DD\u5099\u53D6\u5F97";
-      }
-      return `\u5373\u5C07\u53D6\u5F97\u300C${name}\u300D`;
+      if (now < this.current.readyAt) return `\u5373\u5C07${action.isRoll ? "\u70BA" : ""}${action.description}`;
+      this.handled = reveal;
+      this.handledSignature = action.signature;
+      this.attempt = { action, at: now };
+      action.button.click();
+      return action.isRoll ? "\u7B49\u5F85\u904A\u6232\u78BA\u8A8D\u7D44\u968A\u5206\u5BF6" : `\u7B49\u5F85\u904A\u6232\u78BA\u8A8D${action.description}`;
     }
   };
 
@@ -454,7 +689,7 @@
       if (lootStatus) {
         this.cancel();
         this.state.status = this.error || lootStatus;
-        this.state.recommendation = { index: null, reason: "\u7B49\u5F85\u88DD\u5099\u63D0\u793A\u95DC\u9589" };
+        this.state.recommendation = { index: null, reason: "\u7B49\u5F85\u6389\u843D\u63D0\u793A\u95DC\u9589" };
         this.emit();
         return;
       }
@@ -463,7 +698,8 @@
         const currentActions = next ? [next.reroll, ...next.cards.flatMap((c) => Object.values(c.actions))] : [];
         const spent = next?.root === snapshot.root && next.kind === snapshot.kind && currentActions.some((a) => a?.kind === plan.kind && a.left !== null && a.left < plan.action.left);
         const removed = plan.kind === "banish" && next?.root === snapshot.root && next.kind === snapshot.kind && !sameRound(snapshot, next) && !next.cards.some((c) => normalizeName(c.name) === normalizeName(snapshot.cards[plan.cardIndex].name));
-        if (spent || removed) {
+        const closedEmptyChest = plan.kind === "banish" && snapshot.kind === "chest" && snapshot.cards.length === 1 && !next && snapshot.root.classList.contains("hidden") && !snapshot.root.querySelector(".pk-card");
+        if (spent || removed || closedEmptyChest) {
           this.log(`\u5DF2${plan.description}`);
           this.perkAttempt = null;
         } else if (performance.now() - at >= 800) {
@@ -594,7 +830,7 @@
   };
 
   // src/panel.css
-  var panel_default = ':host { all: initial; color-scheme: dark; font-family: "Segoe UI", "Microsoft JhengHei", sans-serif; font-size: 13px; color: #e9edf5; }\n* { box-sizing: border-box; }\nbutton, input, select { font: inherit; }\nbutton { cursor: pointer; }\nbutton:disabled { cursor: default; opacity: .4; }\nbutton:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid #6bd5b7; outline-offset: 2px; }\n.launcher { position: fixed; right: 18px; top: 18px; padding: 11px 15px; color: #d9fff3; background: #182b2b; border: 1px solid #4c7b71; border-radius: 12px; box-shadow: 0 8px 30px #0006; }\n.launcher.active::before { content: "\u25CF "; color: #6bdfb5; }\n.panel { position: fixed; right: 18px; top: 18px; width: 350px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 36px); overflow: auto; background: #151c27; border: 1px solid #334153; border-radius: 16px; box-shadow: 0 16px 64px #0009; }\n[hidden] { display: none !important; }\nheader { display: flex; align-items: center; padding: 17px 18px 13px; gap: 10px; border-bottom: 1px solid #2b3544; }\n.logo { color: #77dbbb; border: 1px solid #527a72; border-radius: 8px; padding: 6px; font-size: 18px; }\nheader strong { display: block; font-size: 16px; letter-spacing: .5px; }\nheader small { color: #99a7bc; font-size: 11px; }\nheader .icon { margin-left: auto; }\nbutton { color: #dce5f4; background: #253043; border: 1px solid #3b4a60; border-radius: 7px; padding: 7px 10px; }\nbutton:hover:not(:disabled) { background: #334158; }\n.icon { min-width: 28px; padding: 5px 7px; }\n.primary { color: #10271f; background: #77dbbb; border-color: #77dbbb; font-weight: 700; }\n.primary:hover:not(:disabled) { background: #a2ebd3; }\n.pause { background: #693c30; border-color: #9a5d46; color: #ffe0cc; }\n.pause:hover:not(:disabled) { background: #80503f; color: #ffe0cc; }\n.body { padding: 14px 16px 16px; }\n.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }\n.mode { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #91a3bc; }\n.mode.on { color: #77dbbb; }\n.status { margin: 10px 0 5px; line-height: 1.7; font-size: 12px; color: #d6e4f3; min-height: 21px; }\n.note, .empty { color: #96a5ba; font-size: 11px; line-height: 1.7; }\n.timer { color: #ffc280; font-size: 11px; line-height: 1.7; }\n.section { margin-top: 16px; padding-top: 14px; border-top: 1px solid #2b3544; }\n.label { display: block; color: #c2cfdf; font-size: 12px; font-weight: 600; margin-bottom: 8px; }\n.row { display: flex; align-items: center; gap: 6px; }\ninput, select { min-width: 0; width: 100%; color: #e8edf6; background: #0f1520; border: 1px solid #344154; border-radius: 7px; padding: 8px; }\ninput::placeholder { color: #7f90a8; }\n.row input, .row select { flex: 1; }\n.row button { flex-shrink: 0; }\n.loop-actions { margin-top: 10px; flex-wrap: wrap; }\n.loop-actions button { flex: 1; font-size: 11px; }\n.kind-tabs { display: flex; gap: 6px; margin-top: 12px; }\n.kind-tabs button { flex: 1; font-size: 12px; }\n.kind-tabs button[aria-pressed="true"] { color: #9fe8d1; border-color: #538c7b; background: #213d35; }\ndetails .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }\ndetails .checkbox-row input { width: 15px; height: 15px; margin: 0; accent-color: #77dbbb; }\n.delay-range { align-items: flex-end; }\n.delay-range label { flex: 1; min-width: 0; font-size: 11px; color: #96a5ba; margin-top: 5px; }\n.delay-range > span { padding-bottom: 8px; color: #96a5ba; }\nol { margin: 10px 0; padding: 0; list-style: none; max-height: 220px; overflow: auto; }\n.priority { display: flex; align-items: center; gap: 6px; padding: 7px 0; border-bottom: 1px solid #252f3e; }\n.rank { color: #77dbbb; width: 20px; font-variant-numeric: tabular-nums; text-align: center; flex-shrink: 0; }\n.rule-tag { color: #9fe8d1; background: #213d35; font-size: 10px; padding: 2px 4px; border-radius: 4px; flex-shrink: 0; }\n.rule-tag.banish { color: #ffc2a5; background: #4b302a; }\n.name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }\n.priority .icon { font-size: 11px; min-width: 25px; padding: 4px; }\n.priority[draggable="true"] { cursor: grab; }\n.priority.drag-over { background: #284139; }\n.current { display: grid; gap: 7px; }\n.card { padding: 9px 10px; border: 1px solid #334153; border-radius: 8px; background: #111824; }\n.card.recommended { border-color: #68c7aa; background: #1a302c; }\n.card .row { align-items: flex-start; }\n.card strong { flex: 1; font-size: 12px; overflow-wrap: anywhere; }\n.card small { display: block; color: #9eb0c5; font-size: 10px; margin-top: 4px; }\n.card button { font-size: 11px; padding: 3px 7px; }\n.reason { color: #8ad6bf; font-size: 10px; margin-top: 5px; line-height: 1.6; }\ndetails summary { cursor: pointer; font-size: 12px; color: #c2cfdf; }\ndetails label { display: block; margin-top: 12px; }\ndetails select, details input { margin-top: 5px; }\n.log { margin: 9px 0; max-height: 150px; overflow: auto; }\n.log p { margin: 0 0 8px; color: #bcc9db; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }\n.log time { color: #768ba6; margin-right: 6px; }\n.message { color: #ffcb8a; font-size: 11px; min-height: 0; line-height: 1.6; margin-top: 6px; }\n.profile-editor { padding: 10px 0 0; }\n.profile-editor .row + .row { margin-top: 8px; }\nfooter { font-size: 10px; color: #7e91ab; margin-top: 14px; line-height: 1.7; }\n@media (max-width: 600px) { .panel { right: 12px; top: 12px; max-height: calc(100dvh - 24px); } }\n';
+  var panel_default = ':host { all: initial; color-scheme: dark; font-family: "Segoe UI", "Microsoft JhengHei", sans-serif; font-size: 13px; color: #e9edf5; }\n* { box-sizing: border-box; }\nbutton, input, select { font: inherit; }\nbutton { cursor: pointer; }\nbutton:disabled { cursor: default; opacity: .4; }\nbutton:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid #6bd5b7; outline-offset: 2px; }\n.launcher { position: fixed; right: 18px; top: 18px; padding: 11px 15px; color: #d9fff3; background: #182b2b; border: 1px solid #4c7b71; border-radius: 12px; box-shadow: 0 8px 30px #0006; }\n.launcher.active::before { content: "\u25CF "; color: #6bdfb5; }\n.panel { position: fixed; right: 18px; top: 18px; width: 350px; max-width: calc(100vw - 24px); max-height: calc(100dvh - 36px); overflow: auto; background: #151c27; border: 1px solid #334153; border-radius: 16px; box-shadow: 0 16px 64px #0009; }\n[hidden] { display: none !important; }\nheader { display: flex; align-items: center; padding: 17px 18px 13px; gap: 10px; border-bottom: 1px solid #2b3544; }\n.logo { color: #77dbbb; border: 1px solid #527a72; border-radius: 8px; padding: 6px; font-size: 18px; }\nheader strong { display: block; font-size: 16px; letter-spacing: .5px; }\nheader small { color: #99a7bc; font-size: 11px; }\nheader .icon { margin-left: auto; }\nbutton { color: #dce5f4; background: #253043; border: 1px solid #3b4a60; border-radius: 7px; padding: 7px 10px; }\nbutton:hover:not(:disabled) { background: #334158; }\n.icon { min-width: 28px; padding: 5px 7px; }\n.primary { color: #10271f; background: #77dbbb; border-color: #77dbbb; font-weight: 700; }\n.primary:hover:not(:disabled) { background: #a2ebd3; }\n.pause { background: #693c30; border-color: #9a5d46; color: #ffe0cc; }\n.pause:hover:not(:disabled) { background: #80503f; color: #ffe0cc; }\n.body { padding: 14px 16px 16px; }\n.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }\n.mode { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #91a3bc; }\n.mode.on { color: #77dbbb; }\n.status { margin: 10px 0 5px; line-height: 1.7; font-size: 12px; color: #d6e4f3; min-height: 21px; }\n.note, .empty { color: #96a5ba; font-size: 11px; line-height: 1.7; }\n.timer { color: #ffc280; font-size: 11px; line-height: 1.7; }\n.section { margin-top: 16px; padding-top: 14px; border-top: 1px solid #2b3544; }\n.label { display: block; color: #c2cfdf; font-size: 12px; font-weight: 600; margin-bottom: 8px; }\n.row { display: flex; align-items: center; gap: 6px; }\ninput, select { min-width: 0; width: 100%; color: #e8edf6; background: #0f1520; border: 1px solid #344154; border-radius: 7px; padding: 8px; }\ninput::placeholder { color: #7f90a8; }\n.row input, .row select { flex: 1; }\n.row button { flex-shrink: 0; }\n.loop-actions { margin-top: 10px; flex-wrap: wrap; }\n.loop-actions button { flex: 1; font-size: 11px; }\n.kind-tabs { display: flex; gap: 6px; margin-top: 12px; }\n.kind-tabs button { flex: 1; font-size: 12px; }\n.kind-tabs button[aria-pressed="true"] { color: #9fe8d1; border-color: #538c7b; background: #213d35; }\ndetails .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }\ndetails .checkbox-row input { width: 15px; height: 15px; margin: 0; accent-color: #77dbbb; }\n.delay-range { align-items: flex-end; }\n.roll-rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }\n.roll-rules label { margin: 0; font-size: 12px; color: #c2cfdf; }\n.delay-range label { flex: 1; min-width: 0; font-size: 11px; color: #96a5ba; margin-top: 5px; }\n.delay-range > span { padding-bottom: 8px; color: #96a5ba; }\nol { margin: 10px 0; padding: 0; list-style: none; max-height: 220px; overflow: auto; }\n.priority { display: flex; align-items: center; gap: 6px; padding: 7px 0; border-bottom: 1px solid #252f3e; }\n.rank { color: #77dbbb; width: 20px; font-variant-numeric: tabular-nums; text-align: center; flex-shrink: 0; }\n.rule-toggle { font-size: 11px; padding: 4px; flex-shrink: 0; }\n.rule-toggle.focus[aria-pressed="true"] { color: #b3f8df; background: #274c40; border-color: #77bda7; }\n.rule-toggle.banish[aria-pressed="true"] { color: #ffd0b8; background: #59392e; border-color: #bd8b70; }\n.name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }\n.priority .icon { font-size: 11px; min-width: 25px; padding: 4px; }\n.priority[draggable="true"] { cursor: grab; }\n.priority.drag-over { background: #284139; }\n.current { display: grid; gap: 7px; }\n.card { padding: 9px 10px; border: 1px solid #334153; border-radius: 8px; background: #111824; }\n.card.recommended { border-color: #68c7aa; background: #1a302c; }\n.card .row { align-items: flex-start; }\n.card strong { flex: 1; font-size: 12px; overflow-wrap: anywhere; }\n.card small { display: block; color: #9eb0c5; font-size: 10px; margin-top: 4px; }\n.card button { font-size: 11px; padding: 3px 7px; }\n.reason { color: #8ad6bf; font-size: 10px; margin-top: 5px; line-height: 1.6; }\ndetails summary { cursor: pointer; font-size: 12px; color: #c2cfdf; }\ndetails label { display: block; margin-top: 12px; }\ndetails select, details input { margin-top: 5px; }\n.log { margin: 9px 0; max-height: 150px; overflow: auto; }\n.log p { margin: 0 0 8px; color: #bcc9db; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }\n.log time { color: #768ba6; margin-right: 6px; }\n.message { color: #ffcb8a; font-size: 11px; min-height: 0; line-height: 1.6; margin-top: 6px; }\n.profile-editor { padding: 10px 0 0; }\n.profile-editor .row + .row { margin-top: 8px; }\nfooter { font-size: 10px; color: #7e91ab; margin-top: 14px; line-height: 1.7; }\n@media (max-width: 600px) { .panel { right: 12px; top: 12px; max-height: calc(100dvh - 24px); } }\n';
 
   // src/run-adapter.ts
   var byId = (id) => document.getElementById(id);
@@ -667,12 +903,20 @@
 .panel,.launcher { pointer-events:auto; }</style>
       <button class="launcher" id="launcher" aria-label="\u958B\u555F RO \u9078\u724C\u52A9\u624B">\u2667 \u9078\u724C\u52A9\u624B</button>
       <section class="panel" id="panel" aria-label="RO \u9078\u724C\u52A9\u624B" hidden>
-        <header><span class="logo" aria-hidden="true">\u2667</span><div><strong>RO \u9078\u724C\u52A9\u624B</strong><small>\u4F60\u7684\u6E05\u55AE\uFF0C\u4F60\u7684\u6253\u6CD5 \xB7 v0.4.0</small></div><button class="icon" id="collapse" aria-label="\u6536\u5408\u9762\u677F">\u2212</button></header>
+        <header><span class="logo" aria-hidden="true">\u2667</span><div><strong>RO \u9078\u724C\u52A9\u624B</strong><small>\u4F60\u7684\u6E05\u55AE\uFF0C\u4F60\u7684\u6253\u6CD5 \xB7 v0.6.0</small></div><button class="icon" id="collapse" aria-label="\u6536\u5408\u9762\u677F">\u2212</button></header>
         <div class="body">
           <div class="toolbar"><span class="mode" id="mode">PREVIEW / \u9810\u89BD</span><button id="toggle" class="primary">\u555F\u7528\u81EA\u52D5\u9078\u724C</button></div>
           <p class="status" id="status" role="status" aria-live="polite"></p>
           <div class="timer" id="timer"></div>
-          <div class="note">\u81EA\u52D5\u8655\u7406\u5347\u7D1A\u6280\u80FD\u3001\u5BF6\u7BB1\u9078\u724C\u8207\u88DD\u5099\u53D6\u5F97\u63D0\u793A\u3002\u91CD\u65B0\u6574\u7406\u5F8C\u56DE\u5230\u9810\u89BD\u6A21\u5F0F\u3002</div>
+          <div class="note">\u91CD\u65B0\u6574\u7406\u5F8C\u56DE\u5230\u9810\u89BD\u6A21\u5F0F\u3002</div>
+          <details class="section" id="roll-settings"><summary>\u7D44\u968A\u5206\u5BF6</summary>
+            <label class="checkbox-row"><input id="auto-roll-loot" type="checkbox">\u4F9D\u7A2E\u985E\u81EA\u52D5\u64F2\u9AB0</label>
+            <p class="note">\u555F\u7528\u81EA\u52D5\u9078\u724C\u5F8C\u751F\u6548\u3002\u7121\u6CD5\u8FA8\u8B58\u7A2E\u985E\u7684\u6389\u843D\u7269\u6703\u5957\u7528\u300C\u5176\u4ED6\u300D\u3002</p>
+            <div class="roll-rules">${rollCategoryKeys.map((key) => `
+              <div><label for="roll-${key}">${rollCategories[key]}</label><select id="roll-${key}">
+                <option value="need">Need\uFF08\u9700\u6C42\uFF09</option><option value="greed">Greed\uFF08\u8CAA\u5A6A\uFF09</option>
+              </select></div>`).join("")}</div>
+          </details>
           <details class="section" id="loop-settings"><summary>\u5FAA\u74B0\u5237\u95DC \xB7 \u9060\u5F81\u968A\u9577</summary>
             <label class="label" for="loop-stage">\u5FAA\u74B0\u95DC\u5361</label>
             <input id="loop-stage" list="loop-stages" maxlength="120" placeholder="\u8F38\u5165\u904A\u6232\u4E2D\u7684\u5B8C\u6574\u95DC\u5361\u540D\u7A31" autocomplete="off">
@@ -702,9 +946,6 @@
           <details class="section" id="advanced"><summary>\u9078\u724C\u8A2D\u5B9A</summary>
             <label class="checkbox-row"><input id="prefer-new-skills" type="checkbox">\u5148\u62FF\u9F4A\u6E05\u55AE\u6280\u80FD\uFF08\u6A58\u8272\u512A\u5148\uFF09</label>
             <p class="note">\u6E05\u55AE\u5167\u6A58\u8272\uFF08\u50B3\u8AAA\uFF09\u724C\u512A\u5148\uFF1B\u6C92\u6709\u6A58\u8272\u6642\u5148\u53D6\u5F97\u65B0\u6280\u80FD\uFF0C\u518D\u7167\u9806\u4F4D\u5347\u7D1A\u3002\u540C\u985E\u5019\u9078\u4ECD\u4F9D\u9806\u4F4D\u3002\u4E0D\u70BA\u4E86\u88DC\u9F4A\u6280\u80FD\u9078\u5165\u6E05\u55AE\u5916\u7684\u724C\uFF1B\u5DF2\u53D6\u5F97\u7684\u653E\u9010\u5C0D\u8C61\u4ECD\u6392\u9664\u3002</p>
-            <label class="checkbox-row"><input id="auto-focus" type="checkbox">\u6280\u80FD\u7B2C\u4E00\u9806\u4F4D\u81EA\u52D5\u5C08\u6CE8</label>
-            <label class="checkbox-row"><input id="auto-banish" type="checkbox">\u6280\u80FD\u6700\u5F8C\u5169\u9806\u4F4D\uFF1A\u5148\u53D6\u5F97\uFF0C\u518D\u653E\u9010</label>
-            <p class="note">\u6280\u80FD\u6E05\u55AE\u81F3\u5C11 3 \u9805\u624D\u555F\u7528\u3002\u6700\u5F8C\u5169\u9806\u4F4D\u5C1A\u672A\u53D6\u5F97\u6642\u4ECD\u4F9D\u9806\u4F4D\u9078\u5165\uFF1B\u5DF2\u53D6\u5F97\u5F8C\uFF0C\u518D\u51FA\u73FE\u5347\u7D1A\u724C\u624D\u653E\u9010\u3001\u4E0D\u7E7C\u7E8C\u5347\u7D1A\u3002\u5C08\u6CE8\u3001\u653E\u9010\u6709\u5269\u9918\u6B21\u6578\u624D\u6703\u57F7\u884C\u3002</p>
             <label class="checkbox-row"><input id="auto-reroll" type="checkbox">\u6280\u80FD\u6C92\u6709\u76EE\u6A19\u724C\u6642\u5168\u90E8\u91CD\u62BD</label>
             <label class="checkbox-row"><input id="chest-auto-reroll" type="checkbox">\u5BF6\u7BB1\u6C92\u6709\u76EE\u6A19\u724C\u6642\u5168\u90E8\u91CD\u62BD</label>
             <p class="note">\u6709\u8A2D\u5B9A\u76EE\u6A19\u6E05\u55AE\u624D\u6703\u91CD\u62BD\u3002\u91CD\u62BD\u6B21\u6578\u7528\u5B8C\u5F8C\uFF0C\u4F9D\u4E0B\u65B9\u672A\u547D\u4E2D\u898F\u5247\u8655\u7406\u3002</p>
@@ -714,8 +955,8 @@
             <select id="chest-fallback"><option value="pause">\u4EA4\u7531\u6211\u624B\u52D5\u9078\u64C7</option><option value="rarity">\u9078\u6700\u9AD8\u7A00\u6709\u5EA6\uFF08\u5FC5\u9808\u5168\u90E8\u8FA8\u8B58\u6210\u529F\uFF09</option></select>
             <label class="checkbox-row"><input id="chest-replace" type="checkbox">\u5BF6\u7BB1\u81EA\u52D5\u78BA\u8A8D\u66FF\u63DB</label>
             <p class="note">\u6E05\u55AE\u5167\u5019\u9078\u724C\u5148\u6BD4\u54C1\u8CEA\uFF0C\u540C\u54C1\u8CEA\u518D\u6BD4\u9806\u4F4D\uFF1B\u52FE\u9078\u5F8C\u6703\u78BA\u8A8D\u66FF\u63DB\u8A72\u6B04\u4F4D\u539F\u6709\u9053\u5177\u3002\u95DC\u9589\u5F8C\uFF0C\u9700\u66FF\u63DB\u7684\u724C\u4EA4\u7531\u4F60\u8655\u7406\u3002</p>
-            <label class="checkbox-row"><input id="auto-collect-loot" type="checkbox">\u64BF\u5230\u88DD\u5099\u5F8C\u81EA\u52D5\u9EDE\u300C\u53D6\u5F97\u300D</label>
-            <p class="note">\u555F\u7528\u81EA\u52D5\u9078\u724C\u5F8C\u751F\u6548\u3002\u7B49\u52D5\u756B\u89E3\u9396\u518D\u95DC\u9589\u88DD\u5099\u63D0\u793A\uFF1B\u4E0D\u64CD\u4F5C\u7D44\u968A\u64F2\u9AB0\u6216\u5176\u4ED6\u734E\u52F5\u9078\u64C7\u3002</p>
+            <label class="checkbox-row"><input id="auto-collect-loot" type="checkbox">\u64BF\u5230\u4EFB\u4F55\u7269\u54C1\u6642\u81EA\u52D5\u9EDE\u300C\u53D6\u5F97\u300D</label>
+            <p class="note">\u555F\u7528\u81EA\u52D5\u9078\u724C\u5F8C\uFF0C\u6703\u7B49\u52D5\u756B\u7D50\u675F\u518D\u9EDE\u300C\u53D6\u5F97\u300D\u3002</p>
             <div class="note" style="margin-top:12px">\u6BCF\u8F2A\u96A8\u6A5F\u9078\u724C\u5EF6\u9072\uFF08\u6BEB\u79D2\uFF09</div>
             <div class="row delay-range"><label for="delay-min">\u6700\u77ED<input id="delay-min" type="number" min="500" max="5000" step="100"></label><span>\uFF5E</span><label for="delay-max">\u6700\u9577<input id="delay-max" type="number" min="500" max="5000" step="100"></label></div>
             <p class="note">\u9810\u8A2D 500\uFF5E1500 \u6BEB\u79D2\uFF0C\u6BCF\u8F2A\u91CD\u65B0\u62BD\u53D6\u4E00\u6B21\u3002\u82E5\u904A\u6232\u52D5\u756B\u5C1A\u672A\u7D50\u675F\uFF0C\u6703\u7B49\u5230\u53EF\u64CD\u4F5C\u6642\u624D\u9EDE\u9078\u3002</p>
@@ -766,7 +1007,7 @@
         if (!name) return this.message("\u8ACB\u8F38\u5165\u6E05\u55AE\u540D\u7A31\u3002");
         if (this.settings.profiles.length >= 20) return this.message("\u6700\u591A\u53EF\u5EFA\u7ACB 20 \u7D44\u6E05\u55AE\u3002");
         const id = crypto.randomUUID();
-        this.settings.profiles.push({ id, name, priorities: [], chestPriorities: [] });
+        this.settings.profiles.push(emptyProfile(id, name));
         this.settings.activeProfileId = id;
         this.commit();
         this.message("\u5DF2\u5EFA\u7ACB\u65B0\u6E05\u55AE\u3002");
@@ -801,7 +1042,13 @@
         this.settings.chestAutoReplace = this.input("chest-replace").checked;
         this.commit();
       });
-      for (const [id, key] of [["prefer-new-skills", "preferNewSkills"], ["auto-collect-loot", "autoCollectLoot"], ["auto-focus", "autoFocusFirst"], ["auto-banish", "autoBanishLastTwo"], ["auto-reroll", "autoReroll"], ["chest-auto-reroll", "chestAutoReroll"]]) {
+      for (const category of rollCategoryKeys) {
+        this.on(`roll-${category}`, "change", () => {
+          this.settings.rollRules[category] = this.select(`roll-${category}`).value === "need" ? "need" : "greed";
+          this.commit();
+        });
+      }
+      for (const [id, key] of [["prefer-new-skills", "preferNewSkills"], ["auto-collect-loot", "autoCollectLoot"], ["auto-roll-loot", "autoRollLoot"], ["auto-reroll", "autoReroll"], ["chest-auto-reroll", "chestAutoReroll"]]) {
         this.on(id, "change", () => {
           this.settings[key] = this.input(id).checked;
           this.commit();
@@ -910,12 +1157,12 @@
       this.select("fallback").value = this.settings.fallback;
       this.select("chest-fallback").value = this.settings.chestFallback;
       this.input("chest-replace").checked = this.settings.chestAutoReplace;
-      this.input("auto-focus").checked = this.settings.autoFocusFirst;
-      this.input("auto-banish").checked = this.settings.autoBanishLastTwo;
       this.input("auto-reroll").checked = this.settings.autoReroll;
       this.input("chest-auto-reroll").checked = this.settings.chestAutoReroll;
       this.input("prefer-new-skills").checked = this.settings.preferNewSkills;
       this.input("auto-collect-loot").checked = this.settings.autoCollectLoot;
+      this.input("auto-roll-loot").checked = this.settings.autoRollLoot;
+      for (const category of rollCategoryKeys) this.select(`roll-${category}`).value = this.settings.rollRules[category];
       this.input("delay-min").value = String(this.settings.delayMinMs);
       this.input("delay-max").value = String(this.settings.delayMaxMs);
       if (this.shadow.activeElement !== this.input("loop-stage")) this.input("loop-stage").value = this.settings.loopStageName;
@@ -926,7 +1173,7 @@
       this.el("empty-priorities").hidden = names.length > 0;
       const list = this.el("priorities");
       list.replaceChildren();
-      const rules = skillRules(this.settings);
+      const rules = this.profile().rules[this.editingKind];
       names.forEach((name, index) => {
         const item = document.createElement("li");
         item.className = "priority";
@@ -938,14 +1185,21 @@
         label.className = "name";
         label.textContent = name;
         item.append(rank, label);
-        if (this.editingKind === "levelup") {
-          const role = rules.focus === name ? "\u5C08\u6CE8" : rules.banishAfterLearning.includes(name) ? "\u53D6\u5F97\u5F8C\u653E\u9010" : "";
-          if (role) {
-            const tag = document.createElement("span");
-            tag.className = `rule-tag ${role === "\u53D6\u5F97\u5F8C\u653E\u9010" ? "banish" : ""}`;
-            tag.textContent = role;
-            item.append(tag);
-          }
+        for (const [key, title] of [["focus", "\u5C08\u6CE8"], ["banish", "\u53D6\u5F97\u5F8C\u653E\u9010"]]) {
+          const toggle = document.createElement("button");
+          toggle.className = `rule-toggle ${key}`;
+          toggle.textContent = title;
+          toggle.setAttribute("aria-label", `${title} ${name}`);
+          const active = rules[key].includes(name);
+          toggle.setAttribute("aria-pressed", String(active));
+          toggle.addEventListener("click", () => {
+            rules.focus = rules.focus.filter((value) => value !== name);
+            rules.banish = rules.banish.filter((value) => value !== name);
+            if (!active) rules[key].push(name);
+            this.commit();
+            this.el("priorities").querySelectorAll(".priority")[index]?.querySelector(`.${key}`)?.focus();
+          });
+          item.append(toggle);
         }
         for (const [symbol, title, target] of [["\u2191", "\u4E0A\u79FB", index - 1], ["\u2193", "\u4E0B\u79FB", index + 1], ["\xD7", "\u79FB\u9664", -1]]) {
           const button = document.createElement("button");
@@ -954,10 +1208,14 @@
           button.setAttribute("aria-label", `${title} ${name}`);
           button.disabled = symbol !== "\xD7" && (target < 0 || target >= names.length);
           button.addEventListener("click", () => {
-            if (symbol === "\xD7") {
-              names.splice(index, 1);
-              this.commit();
-            } else this.move(index, target);
+            if (symbol !== "\xD7") {
+              this.move(index, target);
+              return;
+            }
+            names.splice(index, 1);
+            rules.focus = rules.focus.filter((value) => value !== name);
+            rules.banish = rules.banish.filter((value) => value !== name);
+            this.commit();
           });
           item.append(button);
         }
@@ -1045,9 +1303,9 @@
             });
             row.append(name, add);
             block.append(row);
-            const skillStatus = cardKind !== "levelup" ? "" : card.skillState === "new" ? "\u5C1A\u672A\u53D6\u5F97" : card.skillState === "owned" ? "\u5DF2\u53D6\u5F97\u30FB\u5347\u7D1A\u724C" : "\u53D6\u5F97\u72C0\u614B\u672A\u77E5";
+            const ownership = !supported ? "" : card.ownership === "new" ? "\u5C1A\u672A\u53D6\u5F97" : card.ownership === "owned" ? "\u5DF2\u53D6\u5F97\u30FB\u5347\u7D1A\u724C" : "\u53D6\u5F97\u72C0\u614B\u672A\u77E5";
             const detail = document.createElement("small");
-            detail.textContent = [skillStatus, card.badge, card.details, card.requiresConfirmation ? "\u5C07\u66FF\u63DB\u539F\u6709\u9053\u5177" : ""].filter(Boolean).join(" \xB7 ");
+            detail.textContent = [ownership, card.badge, card.details, card.requiresConfirmation ? "\u5C07\u66FF\u63DB\u539F\u6709\u9053\u5177" : ""].filter(Boolean).join(" \xB7 ");
             block.append(detail);
             if (recommended) {
               const why = document.createElement("div");

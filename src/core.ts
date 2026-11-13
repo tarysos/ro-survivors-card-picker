@@ -1,15 +1,21 @@
-import type { Card, Decision, PerkPlan, PickKind, Settings, Snapshot } from './types';
+import type { Card, Decision, ItemRules, PerkPlan, PickKind, Profile, Settings, Snapshot } from './types';
+import { defaultRollRules, rollCategoryKeys } from './roll-rules';
 
 export const STORAGE_KEY = 'roPickerSettings';
 export const normalizeName = (value: string): string => value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase();
+export const emptyProfile = (id: string, name: string): Profile => ({
+  id, name, priorities: [], chestPriorities: [],
+  rules: { levelup: { focus: [], banish: [] }, chest: { focus: [], banish: [] } },
+});
 export const defaults = (): Settings => ({
-  version: 5,
-  profiles: [{ id: 'default', name: '我的優先清單', priorities: [], chestPriorities: [] }],
+  version: 7,
+  profiles: [emptyProfile('default', '我的優先清單')],
   activeProfileId: 'default', fallback: 'pause', delayMinMs: 500, delayMaxMs: 1500,
   chestFallback: 'pause', chestAutoReplace: true,
-  autoFocusFirst: true, autoBanishLastTwo: true, autoReroll: true, chestAutoReroll: true,
+  autoReroll: true, chestAutoReroll: true,
   loopStageName: '',
   preferNewSkills: true, autoCollectLoot: true,
+  autoRollLoot: true, rollRules: defaultRollRules(),
 });
 export const priorityName = (name: string, kind: PickKind): string => kind === 'chest' ? name.normalize('NFKC').trim().replace(/\s+\+\d+$/u, '') : name.trim();
 export function uniqueNames(values: unknown[]): string[] {
@@ -21,84 +27,99 @@ export function uniqueNames(values: unknown[]): string[] {
       seen.add(key); return true;
     }).slice(0, 200);
 }
+function sanitizeRules(raw: Partial<ItemRules> | undefined, names: string[]): ItemRules {
+  const valid = (values: unknown) => {
+    const marked = new Set(uniqueNames(Array.isArray(values) ? values : []).map(normalizeName));
+    return names.filter(name => marked.has(normalizeName(name)));
+  };
+  const focus = valid(raw?.focus);
+  return { focus, banish: valid(raw?.banish).filter(name => !focus.includes(name)) };
+}
 export function sanitizeSettings(raw: unknown): Settings {
   const base = defaults();
   if (!raw || typeof raw !== 'object') return base;
-  const data = raw as Partial<Settings>;
+  const data = raw as Partial<Settings> & { autoFocusFirst?: boolean; autoBanishLastTwo?: boolean };
   const ids = new Set<string>();
   const profiles = Array.isArray(data.profiles) ? data.profiles.slice(0, 20).flatMap(p => {
     if (!p || typeof p.id !== 'string' || !p.id || ids.has(p.id)) return [];
     ids.add(p.id);
+    const priorities = uniqueNames(Array.isArray(p.priorities) ? p.priorities : []);
+    const chestPriorities = uniqueNames((Array.isArray(p.chestPriorities) ? p.chestPriorities : []).filter((n): n is string => typeof n === 'string').map(n => priorityName(n, 'chest')));
+    const levelup = (data.version ?? 0) < 7 && !p.rules
+      ? { focus: data.autoFocusFirst !== false ? priorities.slice(0, 1) : [],
+          banish: data.autoBanishLastTwo !== false && priorities.length >= 3 ? priorities.slice(-2) : [] }
+      : sanitizeRules(p.rules?.levelup, priorities);
     return [{ id: p.id.slice(0, 100), name: typeof p.name === 'string' && p.name.trim() ? p.name.trim().slice(0, 60) : '未命名清單',
-      priorities: uniqueNames(Array.isArray(p.priorities) ? p.priorities : []),
-      chestPriorities: uniqueNames((Array.isArray(p.chestPriorities) ? p.chestPriorities : []).filter((n): n is string => typeof n === 'string').map(n => priorityName(n, 'chest'))) }];
+      priorities, chestPriorities, rules: { levelup, chest: sanitizeRules(p.rules?.chest, chestPriorities) } }];
   }) : [];
   if (profiles.length) base.profiles = profiles;
   base.activeProfileId = base.profiles.some(p => p.id === data.activeProfileId) ? data.activeProfileId! : base.profiles[0].id;
   base.fallback = data.fallback === 'rarity' ? 'rarity' : 'pause';
   base.chestFallback = data.chestFallback === 'rarity' ? 'rarity' : 'pause';
   base.chestAutoReplace = data.chestAutoReplace !== false;
-  base.autoFocusFirst = data.autoFocusFirst !== false;
-  base.autoBanishLastTwo = data.autoBanishLastTwo !== false;
   base.autoReroll = data.autoReroll !== false;
   base.chestAutoReroll = data.chestAutoReroll !== false;
   base.loopStageName = typeof data.loopStageName === 'string' ? data.loopStageName.trim().slice(0, 120) : '';
   base.preferNewSkills = data.preferNewSkills !== false;
   base.autoCollectLoot = data.autoCollectLoot !== false;
+  base.autoRollLoot = data.autoRollLoot !== false;
+  for (const category of rollCategoryKeys) {
+    const choice = data.rollRules?.[category];
+    if (choice === 'need' || choice === 'greed') base.rollRules[category] = choice;
+  }
   const delay = (value: unknown, fallback: number) => typeof value === 'number' && Number.isFinite(value) ? Math.round(Math.max(500, Math.min(5000, value))) : fallback;
   const lower = delay(data.delayMinMs, 500), upper = delay(data.delayMaxMs, 1500);
   base.delayMinMs = Math.min(lower, upper);
   base.delayMaxMs = Math.max(lower, upper);
   return base;
 }
-function isBanishUpgrade(card: Pick<Card, 'name' | 'skillState'>, names: string[]): boolean {
-  return card.skillState === 'owned' && names.some(name => normalizeName(name) === normalizeName(card.name));
+function isBanishUpgrade(card: Pick<Card, 'name' | 'ownership'>, names: string[], kind: PickKind): boolean {
+  return card.ownership === 'owned' && names.some(name => normalizeName(name) === normalizeName(priorityName(card.name, kind)));
 }
-export function decideSnapshot(snapshot: Pick<Snapshot, 'kind'> & { cards: Pick<Card, 'name' | 'rarity' | 'skillState'>[] }, settings: Settings): Decision {
+export function decideSnapshot(snapshot: Pick<Snapshot, 'kind'> & { cards: Pick<Card, 'name' | 'rarity' | 'ownership'>[] }, settings: Settings): Decision {
+  const kind = snapshot.kind;
+  if (kind !== 'levelup' && kind !== 'chest') return { index: null, reason: '僅處理升級技能與寶箱道具選牌' };
   const profile = settings.profiles.find(p => p.id === settings.activeProfileId)!;
-  if (snapshot.kind === 'levelup') {
-    const rules = skillRules(settings);
-    const candidates = snapshot.cards.map((card, index) => ({ card, index })).filter(c => !isBanishUpgrade(c.card, rules.banishAfterLearning));
-    if (!candidates.length) return { index: null, reason: '目前只有已取得技能的放逐對象，請重抽或手動選擇' };
-    if (settings.preferNewSkills) {
-      const matched = candidates.filter(({ card }) => rules.targets.some(name => normalizeName(name) === normalizeName(card.name)));
-      const orange = matched.filter(({ card }) => card.rarity === 4);
-      const fresh = matched.filter(({ card }) => card.skillState === 'new');
-      const preferred = orange.length ? orange : fresh;
-      if (preferred.length) {
-        const result = decide(preferred.map(({ card }) => card), rules.targets, 'pause');
-        return { index: preferred[result.index!].index, reason: `${orange.length ? '清單內橘色（傳說）技能優先' : '優先補齊尚未取得的清單技能'}；${result.reason}` };
-      }
+  const names = kind === 'chest' ? profile.chestPriorities : profile.priorities;
+  const candidates = snapshot.cards.map((card, index) => ({ card, index }))
+    .filter(({ card }) => !isBanishUpgrade(card, profile.rules[kind].banish, kind));
+  if (!candidates.length && snapshot.cards.length) return { index: null, reason: '目前只有已取得的放逐對象，請重抽或手動選擇' };
+  if (kind === 'levelup' && settings.preferNewSkills) {
+    const matched = candidates.filter(({ card }) => names.some(name => normalizeName(name) === normalizeName(card.name)));
+    const orange = matched.filter(({ card }) => card.rarity === 4);
+    const fresh = matched.filter(({ card }) => card.ownership === 'new');
+    const preferred = orange.length ? orange : fresh;
+    if (preferred.length) {
+      const result = decide(preferred.map(({ card }) => card), names, 'pause');
+      return { index: preferred[result.index!].index, reason: `${orange.length ? '清單內橘色（傳說）技能優先' : '優先補齊尚未取得的清單技能'}；${result.reason}` };
     }
-    const result = decide(candidates.map(c => c.card), rules.targets, settings.fallback);
-    return { ...result, index: result.index === null ? null : candidates[result.index].index };
   }
-  if (snapshot.kind === 'chest') return decide(snapshot.cards.map(c => ({ ...c, name: priorityName(c.name, 'chest') })), profile.chestPriorities, settings.chestFallback, 'rarity');
-  return { index: null, reason: '僅處理升級技能與寶箱道具選牌' };
-}
-export function skillRules(settings: Settings): { focus: string | null; banishAfterLearning: string[]; targets: string[] } {
-  const names = settings.profiles.find(p => p.id === settings.activeProfileId)!.priorities;
-  // With fewer than three names, the first priority would overlap the last two.
-  const banishAfterLearning = settings.autoBanishLastTwo && names.length >= 3 ? names.slice(-2) : [];
-  return { focus: settings.autoFocusFirst ? names[0] ?? null : null, banishAfterLearning, targets: names };
+  const cards = candidates.map(({ card }) => ({ ...card, name: priorityName(card.name, kind) }));
+  const result = decide(cards, names, kind === 'chest' ? settings.chestFallback : settings.fallback, kind === 'chest' ? 'rarity' : 'priority');
+  return { ...result, index: result.index === null ? null : candidates[result.index].index };
 }
 export function planPerk(snapshot: Pick<Snapshot, 'kind' | 'cards' | 'reroll'>, settings: Settings): PerkPlan | null {
-  if (!snapshot.cards.length || (snapshot.kind !== 'levelup' && snapshot.kind !== 'chest')) return null;
+  const kind = snapshot.kind;
+  if (!snapshot.cards.length || (kind !== 'levelup' && kind !== 'chest')) return null;
   const profile = settings.profiles.find(p => p.id === settings.activeProfileId)!;
-  const rules = skillRules(settings);
+  const targets = kind === 'levelup' ? profile.priorities : profile.chestPriorities;
+  const rules = profile.rules[kind];
   const usable = (action: Snapshot['reroll']) => !!action?.enabled && action.left !== null && action.left > 0;
-  if (snapshot.kind === 'levelup') {
-    const focusIndex = rules.focus ? snapshot.cards.findIndex(card => normalizeName(card.name) === normalizeName(rules.focus!) && usable(card.actions.focus ?? null)) : -1;
-    if (focusIndex >= 0) return { kind: 'focus', cardIndex: focusIndex, action: snapshot.cards[focusIndex].actions.focus!, description: `專注「${snapshot.cards[focusIndex].name}」` };
-    for (const name of [...rules.banishAfterLearning].reverse()) {
-      const index = snapshot.cards.findIndex(card => isBanishUpgrade(card, [name]) && usable(card.actions.banish ?? null));
-      if (index >= 0) return { kind: 'banish', cardIndex: index, action: snapshot.cards[index].actions.banish!, description: `放逐「${snapshot.cards[index].name}」` };
+  for (const perk of ['focus', 'banish'] as const) {
+    const marked = targets.filter(name => rules[perk].includes(name));
+    if (perk === 'banish') marked.reverse();
+    for (const name of marked) {
+      const index = snapshot.cards.findIndex(card => normalizeName(priorityName(card.name, kind)) === normalizeName(name)
+        && (perk === 'focus' || card.ownership === 'owned') && usable(card.actions[perk] ?? null));
+      if (index >= 0) {
+        const card = snapshot.cards[index];
+        return { kind: perk, cardIndex: index, action: card.actions[perk]!, description: `${perk === 'focus' ? '專注' : '放逐'}「${card.name}」` };
+      }
     }
   }
-  const targets = snapshot.kind === 'levelup' ? rules.targets : profile.chestPriorities;
   const rerollEnabled = snapshot.kind === 'levelup' ? settings.autoReroll : settings.chestAutoReroll;
-  const matched = snapshot.cards.some(card => (snapshot.kind !== 'levelup' || !isBanishUpgrade(card, rules.banishAfterLearning))
-    && targets.some(name => normalizeName(name) === normalizeName(priorityName(card.name, snapshot.kind as PickKind))));
+  const matched = snapshot.cards.some(card => !isBanishUpgrade(card, rules.banish, kind)
+    && targets.some(name => normalizeName(name) === normalizeName(priorityName(card.name, kind))));
   if (rerollEnabled && targets.length > 0 && !matched && usable(snapshot.reroll)) return { kind: 'reroll', cardIndex: null, action: snapshot.reroll!, description: `全部重抽（剩餘 ${snapshot.reroll!.left} 次）` };
   return null;
 }

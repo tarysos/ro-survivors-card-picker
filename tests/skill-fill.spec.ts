@@ -7,6 +7,7 @@ test('fills only listed skills, takes listed orange first, then resumes normal u
     await page.getByRole('textbox', { name: '卡牌名稱', exact: true }).fill(name); await page.locator('#add-form button').click();
   }
   await expect(page.locator('#priority-help')).toContainText('橘色優先');
+  await page.getByRole('button', { name: '取得後放逐 C', exact: true }).click();
   const cases = [
     { cards: [{ name: 'A' }, { name: 'B', badge: '史詩' }, { name: 'C', fresh: true }], pick: 'C' },
     { cards: [{ name: 'A' }, { name: 'B', badge: '傳說' }, { name: 'D', fresh: true }], pick: 'B' },

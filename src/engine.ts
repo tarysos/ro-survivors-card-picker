@@ -132,7 +132,7 @@ export class PickerEngine {
     const lootStatus = this.loot.tick(this.settings, this.state.enabled);
     if (lootStatus) {
       this.cancel(); this.state.status = this.error || lootStatus;
-      this.state.recommendation = { index: null, reason: '等待裝備提示關閉' };
+      this.state.recommendation = { index: null, reason: '等待掉落提示關閉' };
       this.emit(); return;
     }
     if (this.perkAttempt) {
@@ -140,7 +140,10 @@ export class PickerEngine {
       const currentActions = next ? [next.reroll, ...next.cards.flatMap(c => Object.values(c.actions))] : [];
       const spent = next?.root === snapshot.root && next.kind === snapshot.kind && currentActions.some(a => a?.kind === plan.kind && a.left !== null && a.left < plan.action.left!);
       const removed = plan.kind === 'banish' && next?.root === snapshot.root && next.kind === snapshot.kind && !sameRound(snapshot, next) && !next.cards.some(c => normalizeName(c.name) === normalizeName(snapshot.cards[plan.cardIndex!].name));
-      if (spent || removed) {
+      // With no replacement for its last item, the game dismisses the chest entirely.
+      const closedEmptyChest = plan.kind === 'banish' && snapshot.kind === 'chest' && snapshot.cards.length === 1
+        && !next && snapshot.root.classList.contains('hidden') && !snapshot.root.querySelector('.pk-card');
+      if (spent || removed || closedEmptyChest) {
         this.log(`已${plan.description}`); this.perkAttempt = null;
       } else if (performance.now() - at >= 800) {
         this.perkAttempt = null; this.pauseWithError('遊戲未確認專注／放逐／重抽操作，已暫停，請檢查畫面。'); return;

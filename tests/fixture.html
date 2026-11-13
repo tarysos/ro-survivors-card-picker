@@ -26,6 +26,7 @@ window.showRound=(options={})=>{
    if(kind==='focus')perks.focused.push(name);
    if(kind==='banish'){
     nextCards=cards.flatMap((c,i)=>i!==index?[c]:options.banishReplacements?.[name]?[options.banishReplacements[name]]:[]);
+    if(!nextCards.length && options.title==='寶箱'){root.classList.add('hidden');holder.replaceChildren();return;}
     if(!nextCards.length)nextCards=[{name:'Potion',badge:''}];
    }
    if(kind==='reroll')nextCards=options.rerollDecks?.[perks.deckIndex++]??cards;

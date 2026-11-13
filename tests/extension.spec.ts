@@ -11,10 +11,14 @@ async function round(page: Page, options: Record<string, unknown> = {}): Promise
 async function selections(page: Page): Promise<any[]> { return page.evaluate(() => (window as any).selections); }
 async function enable(page: Page): Promise<void> { await page.getByRole('button', { name: '啟用自動選牌', exact: true }).click(); }
 async function perks(page: Page): Promise<any[]> { return page.evaluate(() => (window as any).perkAttempts); }
+async function toggleRule(page: Page, rule: '專注' | '取得後放逐', name: string): Promise<void> {
+  await page.getByRole('button', { name: `${rule} ${name}`, exact: true }).click();
+}
 
 test('skills focus the first priority, banish owned last-two upgrades, then select on a compact screen', async ({ page }, info) => {
   for (const name of ['A', 'B', 'C', 'D']) await add(page, name);
-  await expect(page.locator('#priorities .rule-tag')).toHaveText(['專注', '取得後放逐', '取得後放逐']);
+  await toggleRule(page, '專注', 'A'); await toggleRule(page, '取得後放逐', 'C'); await toggleRule(page, '取得後放逐', 'D');
+  await expect(page.locator('#priorities [aria-pressed="true"]')).toHaveText(['專注', '取得後放逐', '取得後放逐']);
   await round(page, { cards: [{ name: 'C' }, { name: 'A' }, { name: 'D' }], perks: { focus: 2, banish: 2, reroll: 2 } });
   await expect(page.locator('#status')).toContainText('預覽：專注');
   await page.screenshot({ path: info.outputPath('perks-preview.png') });
@@ -30,6 +34,7 @@ test('skills focus the first priority, banish owned last-two upgrades, then sele
 
 test('last two skills are acquired first, banished on later upgrades, and acquired again in a new run', async ({ page }) => {
   for (const name of ['A', 'B', 'C', 'D']) await add(page, name);
+  await toggleRule(page, '取得後放逐', 'C'); await toggleRule(page, '取得後放逐', 'D');
   await page.setViewportSize({ width: 925, height: 390 });
   await round(page, { cards: [{ name: 'D', badge: '技能', fresh: true }, { name: 'C', badge: '技能', fresh: true }], perks: { banish: 2, reroll: 2 } });
   await expect(page.locator('#current')).toContainText('尚未取得');
@@ -57,6 +62,7 @@ test('last two skills are acquired first, banished on later upgrades, and acquir
 
 test('unknown skill state is not treated as owned solely because its new ribbon is absent', async ({ page }) => {
   for (const name of ['A', 'C', 'D']) await add(page, name);
+  await toggleRule(page, '取得後放逐', 'D');
   await round(page, { cards: [{ name: 'D', badge: '未知標籤' }], perks: { banish: 2, reroll: 2 } });
   await expect(page.locator('#current')).toContainText('取得狀態未知');
   await enable(page);
@@ -73,8 +79,9 @@ test('skills reroll identical non-target decks until a target appears without cl
   expect(await page.evaluate(() => (window as any).rerolls)).toBe(0);
 });
 
-test('chest reroll precedes rarity and replacement fallback and never uses focus or banish', async ({ page }) => {
+test('chest reroll precedes rarity and replacement fallback and ignores skill marks', async ({ page }) => {
   for (const name of ['Potion', 'C', 'D']) await add(page, name);
+  await toggleRule(page, '專注', 'Potion'); await toggleRule(page, '取得後放逐', 'D');
   await page.getByRole('button', { name: '寶箱道具', exact: true }).click(); await add(page, 'Elixir');
   await page.locator('#advanced summary').click();
   await page.locator('#chest-fallback').selectOption('rarity'); await page.locator('#chest-replace').uncheck();
@@ -99,8 +106,30 @@ test('exhausted rerolls stop at manual fallback and an empty list never consumes
   expect(await perks(page)).toHaveLength(1);
 });
 
+test('chest marks persist by name, focus the configured item and banish only its owned upgrade', async ({ page }) => {
+  await page.locator('#kind-chest').click();
+  await add(page, '護符'); await add(page, '指環');
+  await toggleRule(page, '取得後放逐', '護符'); await toggleRule(page, '專注', '指環');
+  await page.getByRole('button', { name: '上移 指環', exact: true }).click();
+  await page.reload(); await page.getByRole('button', { name: '開啟 RO 選牌助手' }).click();
+  await page.locator('#kind-chest').click();
+  await expect(page.getByRole('button', { name: '專注 指環', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  const chest = { title: '寶箱', gain: false, perks: { focus: 1, banish: 1, reroll: 1 } };
+  await round(page, { ...chest, cards: [{ name: '護符', badge: '傳說', fresh: true }] });
+  await enable(page); await expect.poll(async () => (await selections(page))[0]?.name).toBe('護符');
+  await expect(page.locator('#picker')).toHaveClass(/hidden/);
+  await round(page, { ...chest, cards: [{ name: '護符 +1', badge: '傳說' }, { name: '指環 +2', badge: '普通' }] });
+  await expect.poll(async () => (await selections(page))[1]?.name, { timeout: 9000 }).toBe('指環 +2');
+  expect(await perks(page)).toEqual([{ kind: 'focus', name: '指環 +2' }, { kind: 'banish', name: '護符 +1' }]);
+  await expect(page.locator('#picker')).toHaveClass(/hidden/);
+  await round(page, { ...chest, cards: [{ name: '護符 +2' }] });
+  await expect(page.locator('#logs')).toContainText('已放逐「護符 +2」');
+  await expect(page.locator('#toggle')).toHaveText('暫停自動選牌');
+});
+
 test('banish targets stay excluded after uses run out and never count as wanted cards for reroll', async ({ page }) => {
   for (const name of ['A', 'C', 'D']) await add(page, name);
+  await toggleRule(page, '取得後放逐', 'C'); await toggleRule(page, '取得後放逐', 'D');
   await page.locator('#advanced summary').click(); await page.locator('#fallback').selectOption('rarity');
   await round(page, { cards: [{ name: 'C', badge: '傳說' }, { name: 'D', badge: '傳說' }], perks: { banish: 1, reroll: 1 }, rerollDecks: [[{ name: 'C', badge: '傳說' }, { name: 'Other', badge: '普通' }]] });
   await enable(page);
@@ -108,18 +137,20 @@ test('banish targets stay excluded after uses run out and never count as wanted 
   expect(await perks(page)).toEqual([{ kind: 'banish', name: 'D' }, { kind: 'reroll', name: null }]);
 });
 
-test('pause cancels a pending perk and changed priority redirects focus before consumption', async ({ page }) => {
+test('pause cancels a pending perk and the focus mark follows the name after reordering', async ({ page }) => {
   await add(page, 'A'); await add(page, 'B');
+  await toggleRule(page, '專注', 'A');
   await round(page, { cards: [{ name: 'A' }, { name: 'B' }], perks: { focus: 2, banish: 2, reroll: 2 } });
   await enable(page); await page.getByRole('button', { name: '暫停自動選牌', exact: true }).click();
   await page.waitForTimeout(1800); expect(await perks(page)).toEqual([]);
   await enable(page); await page.getByRole('button', { name: '上移 B', exact: true }).click();
   await expect.poll(async () => (await selections(page))[0]?.name, { timeout: 6000 }).toBe('B');
-  expect(await perks(page)).toEqual([{ kind: 'focus', name: 'B' }]);
+  expect(await perks(page)).toEqual([{ kind: 'focus', name: 'A' }]);
 });
 
 test('a rejected perk pauses without consuming repeated attempts', async ({ page }) => {
-  await add(page, 'A'); await round(page, { cards: [{ name: 'A' }], perks: { focus: 2 }, rejectPerk: 'focus' }); await enable(page);
+  await add(page, 'A'); await toggleRule(page, '專注', 'A');
+  await round(page, { cards: [{ name: 'A' }], perks: { focus: 2 }, rejectPerk: 'focus' }); await enable(page);
   await expect(page.locator('#status')).toContainText('遊戲未確認專注');
   await expect(page.getByRole('button', { name: '啟用自動選牌', exact: true })).toBeVisible();
   await page.waitForTimeout(1800);
@@ -128,12 +159,15 @@ test('a rejected perk pauses without consuming repeated attempts', async ({ page
 
 test('perk switches persist and their disabled rules leave normal priority selection', async ({ page }) => {
   for (const name of ['A', 'C', 'D']) await add(page, name);
+  await toggleRule(page, '專注', 'C'); await toggleRule(page, '取得後放逐', 'C');
+  await expect(page.getByRole('button', { name: '專注 C', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await toggleRule(page, '取得後放逐', 'C');
   await page.locator('#advanced summary').click();
-  for (const id of ['auto-focus', 'auto-banish', 'auto-reroll', 'chest-auto-reroll']) await page.locator(`#${id}`).uncheck();
-  await expect(page.locator('#priorities .rule-tag')).toHaveCount(0);
+  for (const id of ['auto-reroll', 'chest-auto-reroll']) await page.locator(`#${id}`).uncheck();
+  await expect(page.locator('#priorities [aria-pressed="true"]')).toHaveCount(0);
   await page.reload(); await page.getByRole('button', { name: '開啟 RO 選牌助手' }).click();
   await page.locator('#advanced summary').click();
-  for (const id of ['auto-focus', 'auto-banish', 'auto-reroll', 'chest-auto-reroll']) await expect(page.locator(`#${id}`)).not.toBeChecked();
+  for (const id of ['auto-reroll', 'chest-auto-reroll']) await expect(page.locator(`#${id}`)).not.toBeChecked();
   await round(page, { cards: [{ name: 'D' }], perks: { focus: 2, banish: 2, reroll: 2 } }); await enable(page);
   await expect.poll(async () => (await selections(page))[0]?.name).toBe('D'); expect(await perks(page)).toEqual([]);
 });
