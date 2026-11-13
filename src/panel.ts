@@ -27,7 +27,7 @@ export class Panel {
       <style>${styles}\n.panel,.launcher { pointer-events:auto; }</style>
       <button class="launcher" id="launcher" aria-label="開啟 RO 選牌助手">♧ 選牌助手</button>
       <section class="panel" id="panel" aria-label="RO 選牌助手" hidden>
-        <header><span class="logo" aria-hidden="true">♧</span><div><strong>RO 選牌助手</strong><small>你的清單，你的打法 · v0.3.1</small></div><button class="icon" id="collapse" aria-label="收合面板">−</button></header>
+        <header><span class="logo" aria-hidden="true">♧</span><div><strong>RO 選牌助手</strong><small>你的清單，你的打法 · v0.3.2</small></div><button class="icon" id="collapse" aria-label="收合面板">−</button></header>
         <div class="body">
           <div class="toolbar"><span class="mode" id="mode">PREVIEW / 預覽</span><button id="toggle" class="primary">啟用自動選牌</button></div>
           <p class="status" id="status" role="status" aria-live="polite"></p>
@@ -44,7 +44,7 @@ export class Panel {
             <ol id="priorities" aria-label="卡牌優先順序"></ol>
             <div class="empty" id="empty-priorities">還沒有優先卡牌。輸入遊戲顯示的名稱，或從下方目前選牌加入。</div>
             <form id="add-form" class="row"><input id="card-name" placeholder="輸入完整卡牌名稱" maxlength="120" aria-label="卡牌名稱" autocomplete="off"><button type="submit">加入</button></form>
-            <div class="note" style="margin-top:6px">由上到下依序優先。拖曳或使用 ↑ ↓ 排序。</div>
+            <div class="note" id="priority-help" style="margin-top:6px"></div>
             <div class="message" id="message" role="status"></div>
           </div>
           <div class="section"><span class="label">目前選牌</span><div id="current" class="current"><div class="empty">升級或寶箱選牌出現後，會在這裡顯示。</div></div></div>
@@ -60,11 +60,11 @@ export class Panel {
             <label class="note" for="chest-fallback">寶箱清單沒有命中時</label>
             <select id="chest-fallback"><option value="pause">交由我手動選擇</option><option value="rarity">選最高稀有度（必須全部辨識成功）</option></select>
             <label class="checkbox-row"><input id="chest-replace" type="checkbox">寶箱自動確認替換</label>
-            <p class="note">依候選牌順位選擇；勾選後會確認替換該欄位原有道具。關閉後，需替換的牌交由你處理。</p>
+            <p class="note">清單內候選牌先比品質，同品質再比順位；勾選後會確認替換該欄位原有道具。關閉後，需替換的牌交由你處理。</p>
             <div class="note" style="margin-top:12px">每輪隨機選牌延遲（毫秒）</div>
             <div class="row delay-range"><label for="delay-min">最短<input id="delay-min" type="number" min="500" max="5000" step="100"></label><span>～</span><label for="delay-max">最長<input id="delay-max" type="number" min="500" max="5000" step="100"></label></div>
             <p class="note">預設 500～1500 毫秒，每輪重新抽取一次。若遊戲動畫尚未結束，會等到可操作時才點選。</p>
-            <p class="note">仍會等待遊戲進場動畫。同順位先比較稀有度，再由左至右。寶箱名稱會忽略結尾的 +1、+2 等強化數字；切換語言後請確認清單。</p>
+            <p class="note">技能先比順位，再比稀有度；寶箱清單內先比品質（稀有度），再比順位。皆相同時由左至右。寶箱名稱會忽略結尾的 +1、+2 等強化數字；切換語言後請確認清單。</p>
           </details>
           <details class="section"><summary>本分頁紀錄（最近 30 筆）</summary><div id="logs" class="log"></div><button id="clear-logs">清除紀錄</button></details>
           <footer>設定儲存在此瀏覽器。自動選牌開關只作用於目前分頁。</footer>
@@ -171,6 +171,9 @@ export class Panel {
     this.input('delay-min').value = String(this.settings.delayMinMs);
     this.input('delay-max').value = String(this.settings.delayMaxMs);
     for (const kind of ['levelup', 'chest'] as const) this.el(`kind-${kind}`).setAttribute('aria-pressed', String(kind === this.editingKind));
+    this.el('priority-help').textContent = this.editingKind === 'chest'
+      ? '清單內先選品質最高的道具，品質相同才依順位。拖曳或使用 ↑ ↓ 排序。'
+      : '由上到下依序優先。拖曳或使用 ↑ ↓ 排序。';
     this.el('empty-priorities').textContent = this.editingKind === 'chest' ? '尚未設定寶箱順位。可從目前寶箱加入，或在選牌設定改用最高稀有度。' : '還沒有優先技能。輸入遊戲顯示的名稱，或從下方目前選牌加入。';
     const names = this.names();
     this.el('empty-priorities').hidden = names.length > 0;

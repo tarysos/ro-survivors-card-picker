@@ -69,7 +69,7 @@
       const result = decide(candidates.map((c) => c.card), rules.targets, settings.fallback);
       return { ...result, index: result.index === null ? null : candidates[result.index].index };
     }
-    if (snapshot.kind === "chest") return decide(snapshot.cards.map((c) => ({ ...c, name: priorityName(c.name, "chest") })), profile.chestPriorities, settings.chestFallback);
+    if (snapshot.kind === "chest") return decide(snapshot.cards.map((c) => ({ ...c, name: priorityName(c.name, "chest") })), profile.chestPriorities, settings.chestFallback, "rarity");
     return { index: null, reason: "\u50C5\u8655\u7406\u5347\u7D1A\u6280\u80FD\u8207\u5BF6\u7BB1\u9053\u5177\u9078\u724C" };
   }
   function skillRules(settings) {
@@ -96,14 +96,18 @@
     if (rerollEnabled && targets.length > 0 && !matched && usable(snapshot.reroll)) return { kind: "reroll", cardIndex: null, action: snapshot.reroll, description: `\u5168\u90E8\u91CD\u62BD\uFF08\u5269\u9918 ${snapshot.reroll.left} \u6B21\uFF09` };
     return null;
   }
-  function decide(cards, priorities, fallback) {
+  function decide(cards, priorities, fallback, orderBy = "priority") {
     if (!cards.length) return { index: null, reason: "\u7B49\u5F85\u5361\u724C\u8F09\u5165" };
     const order = new Map(priorities.map((name, index) => [normalizeName(name), index]));
     const matched = cards.map((card, index) => ({ index, rank: order.get(normalizeName(card.name)), rarity: card.rarity })).filter((c) => c.rank !== void 0);
     if (matched.length) {
-      matched.sort((a, b) => a.rank - b.rank || (b.rarity ?? -1) - (a.rarity ?? -1) || a.index - b.index);
+      matched.sort((a, b) => {
+        const byPriority = a.rank - b.rank;
+        const byRarity = (b.rarity ?? -1) - (a.rarity ?? -1);
+        return (orderBy === "rarity" ? byRarity || byPriority : byPriority || byRarity) || a.index - b.index;
+      });
       const winner = matched[0];
-      return { index: winner.index, reason: `\u512A\u5148\u6E05\u55AE\u7B2C ${winner.rank + 1} \u9806\u4F4D\uFF1B\u540C\u9806\u4F4D\u4F9D\u7A00\u6709\u5EA6\u3001\u518D\u7531\u5DE6\u81F3\u53F3` };
+      return { index: winner.index, reason: orderBy === "rarity" ? `\u6E05\u55AE\u5167\u54C1\u8CEA\u512A\u5148\uFF1B\u540C\u54C1\u8CEA\u4F9D\u6E05\u55AE\u9806\u4F4D\u3001\u518D\u7531\u5DE6\u81F3\u53F3\uFF08\u7B2C ${winner.rank + 1} \u9806\u4F4D\uFF09` : `\u512A\u5148\u6E05\u55AE\u7B2C ${winner.rank + 1} \u9806\u4F4D\uFF1B\u540C\u9806\u4F4D\u4F9D\u7A00\u6709\u5EA6\u3001\u518D\u7531\u5DE6\u81F3\u53F3` };
     }
     if (fallback === "rarity" && cards.every((c) => c.rarity !== null)) {
       const index = cards.reduce((best, c, i) => c.rarity > cards[best].rarity ? i : best, 0);
@@ -499,7 +503,7 @@
 .panel,.launcher { pointer-events:auto; }</style>
       <button class="launcher" id="launcher" aria-label="\u958B\u555F RO \u9078\u724C\u52A9\u624B">\u2667 \u9078\u724C\u52A9\u624B</button>
       <section class="panel" id="panel" aria-label="RO \u9078\u724C\u52A9\u624B" hidden>
-        <header><span class="logo" aria-hidden="true">\u2667</span><div><strong>RO \u9078\u724C\u52A9\u624B</strong><small>\u4F60\u7684\u6E05\u55AE\uFF0C\u4F60\u7684\u6253\u6CD5 \xB7 v0.3.1</small></div><button class="icon" id="collapse" aria-label="\u6536\u5408\u9762\u677F">\u2212</button></header>
+        <header><span class="logo" aria-hidden="true">\u2667</span><div><strong>RO \u9078\u724C\u52A9\u624B</strong><small>\u4F60\u7684\u6E05\u55AE\uFF0C\u4F60\u7684\u6253\u6CD5 \xB7 v0.3.2</small></div><button class="icon" id="collapse" aria-label="\u6536\u5408\u9762\u677F">\u2212</button></header>
         <div class="body">
           <div class="toolbar"><span class="mode" id="mode">PREVIEW / \u9810\u89BD</span><button id="toggle" class="primary">\u555F\u7528\u81EA\u52D5\u9078\u724C</button></div>
           <p class="status" id="status" role="status" aria-live="polite"></p>
@@ -516,7 +520,7 @@
             <ol id="priorities" aria-label="\u5361\u724C\u512A\u5148\u9806\u5E8F"></ol>
             <div class="empty" id="empty-priorities">\u9084\u6C92\u6709\u512A\u5148\u5361\u724C\u3002\u8F38\u5165\u904A\u6232\u986F\u793A\u7684\u540D\u7A31\uFF0C\u6216\u5F9E\u4E0B\u65B9\u76EE\u524D\u9078\u724C\u52A0\u5165\u3002</div>
             <form id="add-form" class="row"><input id="card-name" placeholder="\u8F38\u5165\u5B8C\u6574\u5361\u724C\u540D\u7A31" maxlength="120" aria-label="\u5361\u724C\u540D\u7A31" autocomplete="off"><button type="submit">\u52A0\u5165</button></form>
-            <div class="note" style="margin-top:6px">\u7531\u4E0A\u5230\u4E0B\u4F9D\u5E8F\u512A\u5148\u3002\u62D6\u66F3\u6216\u4F7F\u7528 \u2191 \u2193 \u6392\u5E8F\u3002</div>
+            <div class="note" id="priority-help" style="margin-top:6px"></div>
             <div class="message" id="message" role="status"></div>
           </div>
           <div class="section"><span class="label">\u76EE\u524D\u9078\u724C</span><div id="current" class="current"><div class="empty">\u5347\u7D1A\u6216\u5BF6\u7BB1\u9078\u724C\u51FA\u73FE\u5F8C\uFF0C\u6703\u5728\u9019\u88E1\u986F\u793A\u3002</div></div></div>
@@ -532,11 +536,11 @@
             <label class="note" for="chest-fallback">\u5BF6\u7BB1\u6E05\u55AE\u6C92\u6709\u547D\u4E2D\u6642</label>
             <select id="chest-fallback"><option value="pause">\u4EA4\u7531\u6211\u624B\u52D5\u9078\u64C7</option><option value="rarity">\u9078\u6700\u9AD8\u7A00\u6709\u5EA6\uFF08\u5FC5\u9808\u5168\u90E8\u8FA8\u8B58\u6210\u529F\uFF09</option></select>
             <label class="checkbox-row"><input id="chest-replace" type="checkbox">\u5BF6\u7BB1\u81EA\u52D5\u78BA\u8A8D\u66FF\u63DB</label>
-            <p class="note">\u4F9D\u5019\u9078\u724C\u9806\u4F4D\u9078\u64C7\uFF1B\u52FE\u9078\u5F8C\u6703\u78BA\u8A8D\u66FF\u63DB\u8A72\u6B04\u4F4D\u539F\u6709\u9053\u5177\u3002\u95DC\u9589\u5F8C\uFF0C\u9700\u66FF\u63DB\u7684\u724C\u4EA4\u7531\u4F60\u8655\u7406\u3002</p>
+            <p class="note">\u6E05\u55AE\u5167\u5019\u9078\u724C\u5148\u6BD4\u54C1\u8CEA\uFF0C\u540C\u54C1\u8CEA\u518D\u6BD4\u9806\u4F4D\uFF1B\u52FE\u9078\u5F8C\u6703\u78BA\u8A8D\u66FF\u63DB\u8A72\u6B04\u4F4D\u539F\u6709\u9053\u5177\u3002\u95DC\u9589\u5F8C\uFF0C\u9700\u66FF\u63DB\u7684\u724C\u4EA4\u7531\u4F60\u8655\u7406\u3002</p>
             <div class="note" style="margin-top:12px">\u6BCF\u8F2A\u96A8\u6A5F\u9078\u724C\u5EF6\u9072\uFF08\u6BEB\u79D2\uFF09</div>
             <div class="row delay-range"><label for="delay-min">\u6700\u77ED<input id="delay-min" type="number" min="500" max="5000" step="100"></label><span>\uFF5E</span><label for="delay-max">\u6700\u9577<input id="delay-max" type="number" min="500" max="5000" step="100"></label></div>
             <p class="note">\u9810\u8A2D 500\uFF5E1500 \u6BEB\u79D2\uFF0C\u6BCF\u8F2A\u91CD\u65B0\u62BD\u53D6\u4E00\u6B21\u3002\u82E5\u904A\u6232\u52D5\u756B\u5C1A\u672A\u7D50\u675F\uFF0C\u6703\u7B49\u5230\u53EF\u64CD\u4F5C\u6642\u624D\u9EDE\u9078\u3002</p>
-            <p class="note">\u4ECD\u6703\u7B49\u5F85\u904A\u6232\u9032\u5834\u52D5\u756B\u3002\u540C\u9806\u4F4D\u5148\u6BD4\u8F03\u7A00\u6709\u5EA6\uFF0C\u518D\u7531\u5DE6\u81F3\u53F3\u3002\u5BF6\u7BB1\u540D\u7A31\u6703\u5FFD\u7565\u7D50\u5C3E\u7684 +1\u3001+2 \u7B49\u5F37\u5316\u6578\u5B57\uFF1B\u5207\u63DB\u8A9E\u8A00\u5F8C\u8ACB\u78BA\u8A8D\u6E05\u55AE\u3002</p>
+            <p class="note">\u6280\u80FD\u5148\u6BD4\u9806\u4F4D\uFF0C\u518D\u6BD4\u7A00\u6709\u5EA6\uFF1B\u5BF6\u7BB1\u6E05\u55AE\u5167\u5148\u6BD4\u54C1\u8CEA\uFF08\u7A00\u6709\u5EA6\uFF09\uFF0C\u518D\u6BD4\u9806\u4F4D\u3002\u7686\u76F8\u540C\u6642\u7531\u5DE6\u81F3\u53F3\u3002\u5BF6\u7BB1\u540D\u7A31\u6703\u5FFD\u7565\u7D50\u5C3E\u7684 +1\u3001+2 \u7B49\u5F37\u5316\u6578\u5B57\uFF1B\u5207\u63DB\u8A9E\u8A00\u5F8C\u8ACB\u78BA\u8A8D\u6E05\u55AE\u3002</p>
           </details>
           <details class="section"><summary>\u672C\u5206\u9801\u7D00\u9304\uFF08\u6700\u8FD1 30 \u7B46\uFF09</summary><div id="logs" class="log"></div><button id="clear-logs">\u6E05\u9664\u7D00\u9304</button></details>
           <footer>\u8A2D\u5B9A\u5132\u5B58\u5728\u6B64\u700F\u89BD\u5668\u3002\u81EA\u52D5\u9078\u724C\u958B\u95DC\u53EA\u4F5C\u7528\u65BC\u76EE\u524D\u5206\u9801\u3002</footer>
@@ -717,6 +721,7 @@
       this.input("delay-min").value = String(this.settings.delayMinMs);
       this.input("delay-max").value = String(this.settings.delayMaxMs);
       for (const kind of ["levelup", "chest"]) this.el(`kind-${kind}`).setAttribute("aria-pressed", String(kind === this.editingKind));
+      this.el("priority-help").textContent = this.editingKind === "chest" ? "\u6E05\u55AE\u5167\u5148\u9078\u54C1\u8CEA\u6700\u9AD8\u7684\u9053\u5177\uFF0C\u54C1\u8CEA\u76F8\u540C\u624D\u4F9D\u9806\u4F4D\u3002\u62D6\u66F3\u6216\u4F7F\u7528 \u2191 \u2193 \u6392\u5E8F\u3002" : "\u7531\u4E0A\u5230\u4E0B\u4F9D\u5E8F\u512A\u5148\u3002\u62D6\u66F3\u6216\u4F7F\u7528 \u2191 \u2193 \u6392\u5E8F\u3002";
       this.el("empty-priorities").textContent = this.editingKind === "chest" ? "\u5C1A\u672A\u8A2D\u5B9A\u5BF6\u7BB1\u9806\u4F4D\u3002\u53EF\u5F9E\u76EE\u524D\u5BF6\u7BB1\u52A0\u5165\uFF0C\u6216\u5728\u9078\u724C\u8A2D\u5B9A\u6539\u7528\u6700\u9AD8\u7A00\u6709\u5EA6\u3002" : "\u9084\u6C92\u6709\u512A\u5148\u6280\u80FD\u3002\u8F38\u5165\u904A\u6232\u986F\u793A\u7684\u540D\u7A31\uFF0C\u6216\u5F9E\u4E0B\u65B9\u76EE\u524D\u9078\u724C\u52A0\u5165\u3002";
       const names = this.names();
       this.el("empty-priorities").hidden = names.length > 0;

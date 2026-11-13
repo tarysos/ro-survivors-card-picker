@@ -293,7 +293,7 @@ test('chest has separate priorities, captures base names, and evaluates new item
   await page.getByRole('button', { name: '加入 Elixir 到清單' }).click();
   await page.screenshot({ path: info.outputPath('chest-preview.png') });
   await enable(page);
-  await expect.poll(async () => (await selections(page))[0]?.name).toBe('Potion +3');
+  await expect.poll(async () => (await selections(page))[0]?.name).toBe('Elixir');
   await expect(page.locator('#picker')).toHaveClass(/hidden/);
   await round(page, { title: '寶箱', gain: false, cards: [{ name: 'Potion', badge: '傳說', fresh: true }, { name: 'Potion +4', badge: '普通' }] });
   await expect.poll(async () => (await selections(page))[1]?.name).toBe('Potion');
@@ -304,6 +304,25 @@ test('chest has separate priorities, captures base names, and evaluates new item
   await expect(page.locator('#priorities .name')).toHaveText(['Fire Bolt']);
   await page.getByRole('button', { name: '寶箱道具', exact: true }).click();
   await expect(page.locator('#priorities .name')).toHaveText(['Potion', 'Elixir']);
+});
+
+test('chest picks the best listed quality, confirms that item, and breaks quality ties by list order', async ({ page }) => {
+  await page.getByRole('button', { name: '寶箱道具', exact: true }).click();
+  await add(page, 'Potion'); await add(page, 'Elixir');
+  await expect(page.locator('#priority-help')).toContainText('品質相同才依順位');
+  await round(page, { title: '寶箱', gain: false,
+    cards: [{ name: 'Outside', badge: '神話', confirm: true }, { name: 'Potion +9', badge: '普通', confirm: true }, { name: 'Elixir', badge: '傳說', fresh: true, confirm: true }],
+    perks: { reroll: 2 } });
+  await expect(page.locator('.pk-card[data-ro-recommended="true"] .pk-name')).toHaveText('Elixir');
+  await expect(page.locator('#current .reason')).toContainText('清單內品質優先');
+  await enable(page);
+  await expect.poll(async () => (await selections(page))[0]?.name).toBe('Elixir');
+  expect(await page.evaluate(() => (window as any).confirmAttempts)).toEqual([2]);
+  expect(await perks(page)).toEqual([]);
+  await expect(page.locator('#picker')).toHaveClass(/hidden/);
+  await round(page, { title: '寶箱', gain: false,
+    cards: [{ name: 'Elixir +8', badge: '傳說' }, { name: 'Potion +1', badge: '傳說' }] });
+  await expect.poll(async () => (await selections(page))[1]?.name).toBe('Potion +1');
 });
 
 test('chest confirms only the selected item once, including repeated identical rounds', async ({ page }) => {

@@ -58,7 +58,7 @@ export function decideSnapshot(snapshot: Pick<Snapshot, 'kind'> & { cards: Pick<
     const result = decide(candidates.map(c => c.card), rules.targets, settings.fallback);
     return { ...result, index: result.index === null ? null : candidates[result.index].index };
   }
-  if (snapshot.kind === 'chest') return decide(snapshot.cards.map(c => ({ ...c, name: priorityName(c.name, 'chest') })), profile.chestPriorities, settings.chestFallback);
+  if (snapshot.kind === 'chest') return decide(snapshot.cards.map(c => ({ ...c, name: priorityName(c.name, 'chest') })), profile.chestPriorities, settings.chestFallback, 'rarity');
   return { index: null, reason: '僅處理升級技能與寶箱道具選牌' };
 }
 export function skillRules(settings: Settings): { focus: string | null; banishAfterLearning: string[]; targets: string[] } {
@@ -87,15 +87,21 @@ export function planPerk(snapshot: Pick<Snapshot, 'kind' | 'cards' | 'reroll'>, 
   if (rerollEnabled && targets.length > 0 && !matched && usable(snapshot.reroll)) return { kind: 'reroll', cardIndex: null, action: snapshot.reroll!, description: `全部重抽（剩餘 ${snapshot.reroll!.left} 次）` };
   return null;
 }
-export function decide(cards: Pick<Card, 'name' | 'rarity'>[], priorities: string[], fallback: Settings['fallback']): Decision {
+export function decide(cards: Pick<Card, 'name' | 'rarity'>[], priorities: string[], fallback: Settings['fallback'], orderBy: 'priority' | 'rarity' = 'priority'): Decision {
   if (!cards.length) return { index: null, reason: '等待卡牌載入' };
   const order = new Map(priorities.map((name, index) => [normalizeName(name), index]));
   const matched = cards.map((card, index) => ({ index, rank: order.get(normalizeName(card.name)), rarity: card.rarity }))
     .filter((c): c is typeof c & { rank: number } => c.rank !== undefined);
   if (matched.length) {
-    matched.sort((a, b) => a.rank - b.rank || (b.rarity ?? -1) - (a.rarity ?? -1) || a.index - b.index);
+    matched.sort((a, b) => {
+      const byPriority = a.rank - b.rank;
+      const byRarity = (b.rarity ?? -1) - (a.rarity ?? -1);
+      return (orderBy === 'rarity' ? byRarity || byPriority : byPriority || byRarity) || a.index - b.index;
+    });
     const winner = matched[0];
-    return { index: winner.index, reason: `優先清單第 ${winner.rank + 1} 順位；同順位依稀有度、再由左至右` };
+    return { index: winner.index, reason: orderBy === 'rarity'
+      ? `清單內品質優先；同品質依清單順位、再由左至右（第 ${winner.rank + 1} 順位）`
+      : `優先清單第 ${winner.rank + 1} 順位；同順位依稀有度、再由左至右` };
   }
   if (fallback === 'rarity' && cards.every(c => c.rarity !== null)) {
     const index = cards.reduce((best, c, i) => c.rarity! > cards[best].rarity! ? i : best, 0);

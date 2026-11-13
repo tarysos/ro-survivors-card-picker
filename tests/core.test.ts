@@ -183,3 +183,40 @@ test('chest matching ignores only trailing refinement and uses its own priority/
   assert.equal(decideSnapshot({ kind: 'chest', cards }, settings).index, 0);
   assert.deepEqual(sanitizeSettings({ profiles: [{ id: 'x', chestPriorities: ['A +1', 'A +3'] }] }).profiles[0].chestPriorities, ['A']);
 });
+
+test('chest quality outranks order only among listed items while skill priority stays first', () => {
+  const settings = defaults();
+  settings.profiles[0].priorities = ['A', 'B']; settings.profiles[0].chestPriorities = ['A', 'B'];
+  const cards = [
+    { ...perkCard('Outside'), rarity: 5 },
+    { ...perkCard('A'), rarity: 0 },
+    { ...perkCard('B'), rarity: 4 },
+  ];
+  for (const fallback of ['pause', 'rarity'] as const) {
+    settings.chestFallback = fallback;
+    const chest = decideSnapshot({ kind: 'chest', cards }, settings);
+    assert.equal(chest.index, 2);
+    assert.match(chest.reason, /清單內品質優先/);
+    assert.equal(decideSnapshot({ kind: 'levelup', cards }, settings).index, 1);
+  }
+});
+
+test('equal chest quality uses list order then visual order and ignores refinement levels', () => {
+  const settings = defaults(); settings.profiles[0].chestPriorities = ['A', 'B'];
+  const cards = ['B +9', 'A +1', 'A +8'].map(name => ({ ...perkCard(name), rarity: 3 }));
+  assert.equal(decideSnapshot({ kind: 'chest', cards }, settings).index, 1);
+  settings.profiles[0].chestPriorities.reverse();
+  assert.equal(decideSnapshot({ kind: 'chest', cards }, settings).index, 0);
+  cards[2].rarity = 4;
+  assert.equal(decideSnapshot({ kind: 'chest', cards }, settings).index, 2);
+});
+
+test('listed chest items with unknown quality rank below known quality and otherwise use list order', () => {
+  const settings = defaults(); settings.profiles[0].chestPriorities = ['A', 'B'];
+  const cards = [{ ...perkCard('B'), rarity: 0 as number | null }, { ...perkCard('A'), rarity: null }];
+  assert.equal(decideSnapshot({ kind: 'chest', cards }, settings).index, 0);
+  cards[0].rarity = null;
+  assert.equal(decideSnapshot({ kind: 'chest', cards }, settings).index, 1);
+  settings.profiles[0].chestPriorities = ['Missing']; settings.chestFallback = 'rarity';
+  assert.equal(decideSnapshot({ kind: 'chest', cards }, settings).index, null);
+});
