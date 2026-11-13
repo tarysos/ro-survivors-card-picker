@@ -1,6 +1,7 @@
 import { decideSnapshot, minimumDelay, normalizeName, planPerk, sampleDelay } from './core';
 import { readSnapshot, sameRound, visible } from './adapter';
 import type { PerkPlan, Settings, Snapshot, ViewState } from './types';
+import { LootCollector } from './loot';
 
 export class PickerEngine {
   private settings: Settings;
@@ -12,6 +13,9 @@ export class PickerEngine {
   private queued = false;
   private observer: MutationObserver;
   private observed: HTMLElement | null = null;
+  private lootObserver: MutationObserver;
+  private observedLoot: HTMLElement | null = null;
+  private loot = new LootCollector(text => this.log(text), text => this.pauseWithError(text));
   private attempt: { snapshot: Snapshot; index: number; at: number; acknowledged: boolean; reason: string; phase: 'opening' | 'submitted'; sawConfirmation: boolean } | null = null;
   private error = '';
   private perkAttempt: { snapshot: Snapshot; plan: PerkPlan; at: number } | null = null;
@@ -21,14 +25,17 @@ export class PickerEngine {
   constructor(settings: Settings) {
     this.settings = settings;
     this.observer = new MutationObserver(() => this.queue());
+    this.lootObserver = new MutationObserver(() => this.queue());
     // A low-frequency reconnect watchdog handles a replaced picker without watching the entire game's HUD.
     setInterval(() => this.queue(), 500);
-    document.addEventListener('visibilitychange', () => this.queue());
+    document.addEventListener('visibilitychange', () => { this.loot.defer(); this.queue(); });
     document.addEventListener('click', event => {
       const target = event.target;
+      if (event.isTrusted && target instanceof Element && target.closest('#drop-reveal')) this.loot.manual();
       if (event.isTrusted && target instanceof Element && target.closest('#picker .pk-card, #picker .pk-act, #picker [data-yes], #picker [data-no]')) this.manualIntervention();
     }, true);
     window.addEventListener('keydown', event => {
+      if (event.isTrusted && visible(document.getElementById('drop-reveal')) && !event.composedPath().some(node => node instanceof HTMLElement && node.id === 'ro-picker-assistant') && ['Enter', ' ', 'Escape'].includes(event.key)) { this.loot.manual(); return; }
       if (event.isTrusted && !event.composedPath().some(node => node instanceof HTMLElement && node.id === 'ro-picker-assistant') && this.round && /^(?:[1-9]|Enter| )$/.test(event.key)) this.manualIntervention();
     }, true);
     this.queue();
@@ -49,6 +56,7 @@ export class PickerEngine {
     queueMicrotask(() => { this.queued = false; this.tick(); });
   }
   setEnabled(enabled: boolean): void {
+    this.loot.defer();
     this.cancel(); this.error = ''; this.state.enabled = enabled;
     if (!enabled) this.abandonConfirmation();
     if (enabled && this.round) this.readyAt = performance.now() + minimumDelay(this.round.cards.length, this.sampledDelayMs);
@@ -58,6 +66,7 @@ export class PickerEngine {
   updateSettings(settings: Settings): void {
     // Own storage notifications do not restart or cancel a pending selection.
     if (JSON.stringify(settings) === JSON.stringify(this.settings)) return;
+    this.loot.defer();
     const delayChanged = settings.delayMinMs !== this.settings.delayMinMs || settings.delayMaxMs !== this.settings.delayMaxMs;
     this.abandonConfirmation();
     this.cancel(); this.settings = settings;
@@ -115,6 +124,17 @@ export class PickerEngine {
     }
     const next = readSnapshot();
     this.state.snapshot = next;
+    const lootRoot = document.getElementById('drop-reveal');
+    if (lootRoot !== this.observedLoot) {
+      this.lootObserver.disconnect(); this.observedLoot = lootRoot;
+      if (lootRoot) this.lootObserver.observe(lootRoot, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'disabled', 'hidden', 'style'] });
+    }
+    const lootStatus = this.loot.tick(this.settings, this.state.enabled);
+    if (lootStatus) {
+      this.cancel(); this.state.status = this.error || lootStatus;
+      this.state.recommendation = { index: null, reason: '等待裝備提示關閉' };
+      this.emit(); return;
+    }
     if (this.perkAttempt) {
       const { snapshot, plan, at } = this.perkAttempt;
       const currentActions = next ? [next.reroll, ...next.cards.flatMap(c => Object.values(c.actions))] : [];
@@ -186,7 +206,7 @@ export class PickerEngine {
   private pick(expected: Snapshot, index: number): void {
     this.pending = undefined;
     const current = readSnapshot();
-    if (!this.state.enabled || document.visibilityState !== 'visible' || this.handled || !current || !sameRound(expected, current) || (current.kind !== 'levelup' && current.kind !== 'chest') || current.closing || current.confirming) { this.queue(); return; }
+    if (!this.state.enabled || document.visibilityState !== 'visible' || visible(document.getElementById('drop-reveal')) || this.handled || !current || !sameRound(expected, current) || (current.kind !== 'levelup' && current.kind !== 'chest') || current.closing || current.confirming) { this.queue(); return; }
     const decision = decideSnapshot(current, this.settings);
     if (planPerk(current, this.settings)) { this.queue(); return; }
     const card = current.cards[index];
@@ -203,7 +223,7 @@ export class PickerEngine {
   private performPerk(expected: Snapshot, plan: PerkPlan): void {
     this.pending = undefined;
     const current = readSnapshot();
-    if (!this.state.enabled || this.handled || document.visibilityState !== 'visible' || !current || !sameRound(expected, current) || current.closing || current.confirming) { this.queue(); return; }
+    if (!this.state.enabled || this.handled || document.visibilityState !== 'visible' || visible(document.getElementById('drop-reveal')) || !current || !sameRound(expected, current) || current.closing || current.confirming) { this.queue(); return; }
     const latest = planPerk(current, this.settings);
     if (!latest || latest.kind !== plan.kind || latest.cardIndex !== plan.cardIndex || latest.action.element !== plan.action.element || latest.action.element.disabled || !visible(latest.action.element)) { this.queue(); return; }
     this.handled = true;

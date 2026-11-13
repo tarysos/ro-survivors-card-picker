@@ -1,7 +1,7 @@
 export type PickKind = 'levelup' | 'chest';
 export interface Profile { id: string; name: string; priorities: string[]; chestPriorities: string[] }
 export interface Settings {
-  version: 4;
+  version: 5;
   profiles: Profile[];
   activeProfileId: string;
   fallback: 'pause' | 'rarity';
@@ -13,6 +13,9 @@ export interface Settings {
   autoBanishLastTwo: boolean;
   autoReroll: boolean;
   chestAutoReroll: boolean;
+  loopStageName: string;
+  preferNewSkills: boolean;
+  autoCollectLoot: boolean;
 }
 export type PerkKind = 'focus' | 'banish' | 'reroll';
 export interface GameAction { kind: PerkKind; element: HTMLButtonElement; left: number | null; enabled: boolean }

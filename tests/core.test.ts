@@ -6,6 +6,17 @@ import type { Card, GameAction, PerkKind } from '../src/types';
 const action = (kind: PerkKind, left: number | null = 2, enabled = true): GameAction => ({ kind, left, enabled, element: {} as HTMLButtonElement });
 const perkCard = (name: string, skillState: Card['skillState'] = 'owned'): Card => ({ name, rarity: 0, skillState, badge: '普通', details: '', requiresConfirmation: false, confirmationText: '', element: {} as HTMLButtonElement, actions: { focus: action('focus'), banish: action('banish') } });
 
+test('loop settings migrate without choosing a stage or persisting activation', () => {
+  const previous = { version: 4, profiles: [{ id: 'p', name: 'P', priorities: ['A'], chestPriorities: ['B'] }], activeProfileId: 'p' };
+  const migrated = sanitizeSettings(previous);
+  assert.equal(migrated.version, 5); assert.equal(migrated.loopStageName, '');
+  assert.deepEqual(migrated.profiles, previous.profiles);
+  assert.equal(sanitizeSettings({ ...previous, loopStageName: '  斐揚森林  ', loopEnabled: true }).loopStageName, '斐揚森林');
+  assert.equal('loopEnabled' in sanitizeSettings({ loopEnabled: true }), false);
+  assert.equal(sanitizeSettings({ loopStageName: {} }).loopStageName, '');
+  assert.equal(sanitizeSettings({ loopStageName: 'A'.repeat(200) }).loopStageName.length, 120);
+});
+
 test('skill rules protect the first priority and banish only upgrades of the last two', () => {
   const settings = defaults();
   for (const names of [[], ['A'], ['A', 'B']]) {
@@ -78,7 +89,10 @@ test('last two skills are picked at their original ranks before their upgrades c
   assert.equal(decideSnapshot(snapshot, settings).index, 1);
   assert.match(decideSnapshot(snapshot, settings).reason, /第 3 順位/);
   snapshot.cards.unshift(perkCard('B'));
+  assert.equal(decideSnapshot(snapshot, settings).index, 2); // New C precedes upgrading B.
+  settings.preferNewSkills = false;
   assert.equal(decideSnapshot(snapshot, settings).index, 0);
+  settings.preferNewSkills = true;
   snapshot.cards.shift(); snapshot.cards[1].skillState = 'owned';
   assert.equal(planPerk(snapshot, settings)?.kind, 'banish');
   assert.equal(planPerk(snapshot, settings)?.cardIndex, 1);
@@ -132,7 +146,7 @@ test('minimum delay respects the observed game animation lock for any card count
 
 test('v1 settings retain all skill profiles and gain separate empty chest lists', () => {
   const settings = sanitizeSettings({ version: 1, profiles: [{ id: 'mage', name: '法師', priorities: ['Fire Bolt', 'Heal'] }], activeProfileId: 'mage', fallback: 'rarity', delayMs: 2500 });
-  assert.equal(settings.version, 4);
+  assert.equal(settings.version, 5);
   assert.equal(settings.activeProfileId, 'mage');
   assert.deepEqual(settings.profiles[0].priorities, ['Fire Bolt', 'Heal']);
   assert.deepEqual(settings.profiles[0].chestPriorities, []);
@@ -184,8 +198,9 @@ test('chest matching ignores only trailing refinement and uses its own priority/
   assert.deepEqual(sanitizeSettings({ profiles: [{ id: 'x', chestPriorities: ['A +1', 'A +3'] }] }).profiles[0].chestPriorities, ['A']);
 });
 
-test('chest quality outranks order only among listed items while skill priority stays first', () => {
+test('chest quality outranks order while skills can opt out of the new-skills rule', () => {
   const settings = defaults();
+  settings.preferNewSkills = false;
   settings.profiles[0].priorities = ['A', 'B']; settings.profiles[0].chestPriorities = ['A', 'B'];
   const cards = [
     { ...perkCard('Outside'), rarity: 5 },
@@ -199,6 +214,47 @@ test('chest quality outranks order only among listed items while skill priority 
     assert.match(chest.reason, /清單內品質優先/);
     assert.equal(decideSnapshot({ kind: 'levelup', cards }, settings).index, 1);
   }
+});
+
+test('listed orange skills precede new skills, then normal priority resumes when none are new', () => {
+  const settings = defaults(); settings.profiles[0].priorities = ['A', 'B', 'C']; settings.autoBanishLastTwo = false;
+  const cards = [perkCard('A'), perkCard('B', 'new'), { ...perkCard('C'), rarity: 4 }];
+  assert.equal(decideSnapshot({ kind: 'levelup', cards }, settings).index, 2);
+  cards[2].rarity = 3;
+  assert.equal(decideSnapshot({ kind: 'levelup', cards }, settings).index, 1);
+  cards[1].skillState = 'owned';
+  assert.equal(decideSnapshot({ kind: 'levelup', cards }, settings).index, 0);
+});
+
+test('new-skill priority excludes unlisted orange and new cards, and keeps rank within each group', () => {
+  const settings = defaults(); settings.profiles[0].priorities = ['A', 'B'];
+  const cards = [{ ...perkCard('Outside'), rarity: 4 }, perkCard('Outside new', 'new'), perkCard('B', 'new'), perkCard('A', 'new')];
+  for (const fallback of ['pause', 'rarity'] as const) {
+    settings.fallback = fallback;
+    assert.equal(decideSnapshot({ kind: 'levelup', cards }, settings).index, 3);
+    cards[2].skillState = cards[3].skillState = 'owned'; cards[2].rarity = cards[3].rarity = 4;
+    assert.equal(decideSnapshot({ kind: 'levelup', cards }, settings).index, 3);
+  }
+});
+
+test('orange upgrades do not bypass acquisition-before-banish exclusions', () => {
+  const settings = defaults(); settings.profiles[0].priorities = ['A', 'B', 'C', 'D'];
+  const cards = [perkCard('A'), { ...perkCard('C'), rarity: 4 }, perkCard('D', 'new')];
+  assert.equal(decideSnapshot({ kind: 'levelup', cards }, settings).index, 2);
+  assert.equal(planPerk({ kind: 'levelup', cards, reroll: action('reroll') }, settings)?.kind, 'focus');
+  cards[0].actions.focus!.enabled = false;
+  assert.equal(planPerk({ kind: 'levelup', cards, reroll: action('reroll') }, settings)?.cardIndex, 1);
+  cards[1].actions.banish!.left = 0;
+  assert.equal(planPerk({ kind: 'levelup', cards, reroll: action('reroll') }, settings), null);
+});
+
+test('new skill and loot preferences default on, persist opt-out, and can restore original priority', () => {
+  const settings = sanitizeSettings({ version: 4 });
+  assert.equal(settings.preferNewSkills, true); assert.equal(settings.autoCollectLoot, true);
+  const disabled = sanitizeSettings({ ...settings, preferNewSkills: false, autoCollectLoot: false });
+  assert.equal(disabled.preferNewSkills, false); assert.equal(disabled.autoCollectLoot, false);
+  disabled.profiles[0].priorities = ['A', 'B'];
+  assert.equal(decideSnapshot({ kind: 'levelup', cards: [perkCard('A'), { ...perkCard('B'), rarity: 4 }] }, disabled).index, 0);
 });
 
 test('equal chest quality uses list order then visual order and ignores refinement levels', () => {

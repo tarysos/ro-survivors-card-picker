@@ -19,6 +19,7 @@ button:hover:not(:disabled) { background: #334158; }
 .primary { color: #10271f; background: #77dbbb; border-color: #77dbbb; font-weight: 700; }
 .primary:hover:not(:disabled) { background: #a2ebd3; }
 .pause { background: #693c30; border-color: #9a5d46; color: #ffe0cc; }
+.pause:hover:not(:disabled) { background: #80503f; color: #ffe0cc; }
 .body { padding: 14px 16px 16px; }
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .mode { font-size: 11px; font-weight: 700; letter-spacing: 1px; color: #91a3bc; }
@@ -33,6 +34,8 @@ input, select { min-width: 0; width: 100%; color: #e8edf6; background: #0f1520; 
 input::placeholder { color: #7f90a8; }
 .row input, .row select { flex: 1; }
 .row button { flex-shrink: 0; }
+.loop-actions { margin-top: 10px; flex-wrap: wrap; }
+.loop-actions button { flex: 1; font-size: 11px; }
 .kind-tabs { display: flex; gap: 6px; margin-top: 12px; }
 .kind-tabs button { flex: 1; font-size: 12px; }
 .kind-tabs button[aria-pressed="true"] { color: #9fe8d1; border-color: #538c7b; background: #213d35; }

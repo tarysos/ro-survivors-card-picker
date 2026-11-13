@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "RO 選牌助手",
-  "version": "0.3.2",
-  "description": "依技能順位及寶箱清單內品質自動選牌，支援專注、取得後放逐、全部重抽與隨機選牌延遲。",
+  "version": "0.4.0",
+  "description": "自訂關卡循環刷關，自動結算回城、與遠征隊長交談並出發；支援技能與寶箱自動選牌、專注、取得後放逐及重抽。",
   "permissions": ["storage"],
   "action": {
     "default_title": "RO 選牌助手",

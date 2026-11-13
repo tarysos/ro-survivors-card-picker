@@ -3,11 +3,13 @@ import type { Card, Decision, PerkPlan, PickKind, Settings, Snapshot } from './t
 export const STORAGE_KEY = 'roPickerSettings';
 export const normalizeName = (value: string): string => value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase();
 export const defaults = (): Settings => ({
-  version: 4,
+  version: 5,
   profiles: [{ id: 'default', name: '我的優先清單', priorities: [], chestPriorities: [] }],
   activeProfileId: 'default', fallback: 'pause', delayMinMs: 500, delayMaxMs: 1500,
   chestFallback: 'pause', chestAutoReplace: true,
   autoFocusFirst: true, autoBanishLastTwo: true, autoReroll: true, chestAutoReroll: true,
+  loopStageName: '',
+  preferNewSkills: true, autoCollectLoot: true,
 });
 export const priorityName = (name: string, kind: PickKind): string => kind === 'chest' ? name.normalize('NFKC').trim().replace(/\s+\+\d+$/u, '') : name.trim();
 export function uniqueNames(values: unknown[]): string[] {
@@ -40,6 +42,9 @@ export function sanitizeSettings(raw: unknown): Settings {
   base.autoBanishLastTwo = data.autoBanishLastTwo !== false;
   base.autoReroll = data.autoReroll !== false;
   base.chestAutoReroll = data.chestAutoReroll !== false;
+  base.loopStageName = typeof data.loopStageName === 'string' ? data.loopStageName.trim().slice(0, 120) : '';
+  base.preferNewSkills = data.preferNewSkills !== false;
+  base.autoCollectLoot = data.autoCollectLoot !== false;
   const delay = (value: unknown, fallback: number) => typeof value === 'number' && Number.isFinite(value) ? Math.round(Math.max(500, Math.min(5000, value))) : fallback;
   const lower = delay(data.delayMinMs, 500), upper = delay(data.delayMaxMs, 1500);
   base.delayMinMs = Math.min(lower, upper);
@@ -55,6 +60,16 @@ export function decideSnapshot(snapshot: Pick<Snapshot, 'kind'> & { cards: Pick<
     const rules = skillRules(settings);
     const candidates = snapshot.cards.map((card, index) => ({ card, index })).filter(c => !isBanishUpgrade(c.card, rules.banishAfterLearning));
     if (!candidates.length) return { index: null, reason: '目前只有已取得技能的放逐對象，請重抽或手動選擇' };
+    if (settings.preferNewSkills) {
+      const matched = candidates.filter(({ card }) => rules.targets.some(name => normalizeName(name) === normalizeName(card.name)));
+      const orange = matched.filter(({ card }) => card.rarity === 4);
+      const fresh = matched.filter(({ card }) => card.skillState === 'new');
+      const preferred = orange.length ? orange : fresh;
+      if (preferred.length) {
+        const result = decide(preferred.map(({ card }) => card), rules.targets, 'pause');
+        return { index: preferred[result.index!].index, reason: `${orange.length ? '清單內橘色（傳說）技能優先' : '優先補齊尚未取得的清單技能'}；${result.reason}` };
+      }
+    }
     const result = decide(candidates.map(c => c.card), rules.targets, settings.fallback);
     return { ...result, index: result.index === null ? null : candidates[result.index].index };
   }
